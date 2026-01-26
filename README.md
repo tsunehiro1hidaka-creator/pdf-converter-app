@@ -1,0 +1,1 @@
+NoteBookLMで生成したPDFをPPT化して右下のロゴを消し去ります
