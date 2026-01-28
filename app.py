@@ -4,52 +4,77 @@ import cv2
 import numpy as np
 import pytesseract
 from pytesseract import Output
-from pdf2image import convert_from_bytes
+from pdf2image import convert_from_bytes, pdfinfo_from_bytes
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 import io
 
 # === ページ設定 ===
-st.set_page_config(page_title="PDF完全分解ツール", layout="wide")
+st.set_page_config(page_title="Pro PDF Converter Ultimate", layout="wide", initial_sidebar_state="expanded")
 
-st.title("🧩 バラバラに分解！PDFオブジェクト化ツール")
+st.title("🚀 世界最高峰のPDF変換ツール")
 st.markdown("""
-**新機能：**
-PDFを「一枚絵」として貼るのではなく、**「図表」と「文字」を自動で切り分けて配置**します。
-グラフや写真が個別のパーツになるので、配置換えが可能です。
+PDFを解析し、レイアウト、文字、色、そして**図表オブジェクト**まで分解してPowerPoint化します。
+実務で必要な「テンプレート適用」や「ページ指定」にも対応したプロ仕様モデルです。
 """)
 
-# --- サイドバー設定 ---
-st.sidebar.header("🔧 分解設定")
-mode = st.sidebar.radio("変換モード", ["通常モード（背景画像＋文字）", "分解モード（図表切り抜き＋文字）"])
+# ===========================
+# サイドバー：設定エリア
+# ===========================
+st.sidebar.header("🎛️ プロフェッショナル設定")
 
-# 分解モード用の設定
-st.sidebar.subheader("分解感度")
-min_area_size = st.sidebar.slider("最小オブジェクトサイズ", 1000, 20000, 5000, help="小さいゴミを無視する基準")
-dilation_iter = st.sidebar.slider("結合強度", 1, 10, 3, help="バラバラの線を1つの図としてまとめる強さ")
+# タブで設定を整理
+tab1, tab2, tab3 = st.sidebar.tabs(["基本設定", "高度な調整", "出力設定"])
 
-# 共通設定
-st.sidebar.subheader("共通設定")
-detect_color = st.sidebar.checkbox("文字色を自動検出", value=True)
-bg_fill = st.sidebar.checkbox("文字背景を白くする", value=False) # 分解モードならFalse推奨
+with tab1:
+    st.subheader("変換モード")
+    mode = st.radio("処理モード選択", ["分解モード（推奨）", "通常モード"], 
+                    help="分解モードは図と文字を分離します。通常モードは背景を一枚絵として扱います。")
+    
+    st.subheader("テンプレート (任意)")
+    template_file = st.file_uploader("会社のPPTXテンプレートを適用", type="pptx", help="アップロードすると、そのスライドマスターデザインが適用されます。")
 
-uploaded_file = st.file_uploader("PDFをアップロード", type="pdf")
+with tab2:
+    st.subheader("ロゴ/不要領域の削除")
+    use_erase = st.checkbox("有効にする", value=True)
+    col1, col2 = st.columns(2)
+    with col1:
+        erase_width = st.slider("右端カット(px)", 0, 800, 350, step=10)
+    with col2:
+        erase_height = st.slider("下端カット(px)", 0, 500, 180, step=10)
+    
+    st.subheader("分解・認識感度")
+    min_area_size = st.slider("最小図形サイズ", 1000, 20000, 5000, help="これより小さい塊は図として認識しません")
+    detect_color = st.checkbox("文字色の再現", value=True)
 
-# --- 画像処理関数群 ---
+with tab3:
+    st.subheader("ファイルサイズと画質")
+    # JPEG品質 (0-100)
+    jpeg_quality = st.slider("画像圧縮品質 (低画質← →高画質)", 10, 100, 80, help="値を下げるとファイルサイズが軽くなります")
 
+# メインエリア：PDFアップロード
+st.header("📄 PDFファイルをアップロード")
+uploaded_file = st.file_uploader("", type="pdf", label_visibility="collapsed")
+
+# ===========================
+# 関数定義エリア
+# ===========================
 def preprocess_image_for_ocr(cv_img, zoom_factor=2.0):
     h, w = cv_img.shape[:2]
     new_w, new_h = int(w * zoom_factor), int(h * zoom_factor)
     resized = cv2.resize(cv_img, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
     gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
-    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    # コントラスト強調（CLAHE）を追加してさらに精度向上
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    enhanced = clahe.apply(gray)
+    _, binary = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     return binary, new_w, new_h
 
 def get_dominant_color(img_crop):
     try:
         pixels = np.float32(img_crop.reshape(-1, 3))
-        mask = np.all(pixels < 240, axis=1) # 白以外
+        mask = np.all(pixels < 230, axis=1) # 白に近い色を除外強化
         target_pixels = pixels[mask]
         if len(target_pixels) > 0:
             avg = np.mean(target_pixels, axis=0)
@@ -59,182 +84,102 @@ def get_dominant_color(img_crop):
         return 0, 0, 0
 
 def extract_objects(cv_img, min_area=5000, dilation=3):
-    """
-    画像から「図表っぽい部分」の座標リストを返す関数
-    """
-    # 1. グレースケール＆二値化
     gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
-    # 文字や線をくっきりさせる（反転させる：背景黒、物体白）
     thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
-
-    # 2. 膨張処理（バラバラの文字や線をくっつけて「かたまり」にする）
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (10, 10))
     dilated = cv2.dilate(thresh, kernel, iterations=dilation)
-
-    # 3. 輪郭抽出
     contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
     objects = []
     h_img, w_img = cv_img.shape[:2]
-
     for cnt in contours:
         x, y, w, h = cv2.boundingRect(cnt)
         area = w * h
-        
-        # 指定サイズより小さいゴミは無視
-        if area < min_area:
-            continue
-            
-        # 画面全体を覆うような枠（ただの外枠）は無視
-        if w > w_img * 0.9 and h > h_img * 0.9:
-            continue
-
+        if area < min_area: continue
+        if w > w_img * 0.95 and h > h_img * 0.95: continue # ほぼ全画面の枠は無視
         objects.append((x, y, w, h))
-    
     return objects
 
-# --- メイン処理 ---
+# ===========================
+# メイン処理
+# ===========================
 if uploaded_file is not None:
-    st.info(f"📄 {uploaded_file.name} を読み込みました。")
+    # PDF情報の取得（総ページ数など）
+    pdf_info = pdfinfo_from_bytes(uploaded_file.read())
+    max_pages = pdf_info["Pages"]
+    uploaded_file.seek(0) # ファイルポインタを戻す
+
+    st.success(f"✅ 読み込み完了: 全 {max_pages} ページ")
     
-    if st.button("変換スタート"):
+    # ページ範囲指定スライダー（動的に最大値を設定）
+    st.subheader("⚡ 処理範囲の選択")
+    page_range = st.slider("変換するページ範囲を指定してください", 1, max_pages, (1, min(max_pages, 5)))
+    start_page, end_page = page_range
+    
+    process_count = end_page - start_page + 1
+    st.info(f"{start_page}ページ目 から {end_page}ページ目 まで（計 {process_count} ページ）を変換します。")
+
+    if st.button("🔥 究極変換スタート"):
+        # 進捗表示用
         progress_bar = st.progress(0)
         status_text = st.empty()
         
-        images = convert_from_bytes(uploaded_file.read(), dpi=300)
-        total_pages = len(images)
+        status_text.text("PDFを画像に変換中... (高解像度処理のため時間がかかります)")
         
-        prs = Presentation()
-        prs.slide_width = Inches(13.333)
-        prs.slide_height = Inches(7.5)
+        # 指定範囲のみ画像変換（first_page, last_pageを指定）
+        images = convert_from_bytes(uploaded_file.read(), dpi=300, first_page=start_page, last_page=end_page)
         
+        # テンプレートの適用
+        if template_file:
+            prs = Presentation(template_file)
+            status_text.text("テンプレートファイルを適用しました。")
+        else:
+            prs = Presentation()
+            prs.slide_width = Inches(13.333)
+            prs.slide_height = Inches(7.5)
+
+        # 共通スライドレイアウト（白紙またはテンプレートの最後のレイアウトを利用）
+        blank_layout = prs.slide_layouts[len(prs.slide_layouts)-1]
+
         for i, image in enumerate(images):
-            status_text.text(f"{i+1}/{total_pages} ページ目を解析中...")
+            current_page_num = start_page + i
+            status_text.markdown(f"**処理中: {i+1} / {process_count}枚目 (元PDFのP.{current_page_num})**")
             
-            # 画像準備
+            # OpenCV形式へ
             cv_img = np.array(image)
             cv_img = cv2.cvtColor(cv_img, cv2.COLOR_RGB2BGR)
             h_orig, w_orig = cv_img.shape[:2]
+            
+            # パワポスケール計算
             scale_ppt_x = prs.slide_width / w_orig
             scale_ppt_y = prs.slide_height / h_orig
 
-            slide = prs.slides.add_slide(prs.slide_layouts[6])
+            # スライド追加
+            slide = prs.slides.add_slide(blank_layout)
 
-            # === モード分岐 ===
-            if mode == "通常モード（背景画像＋文字）":
-                # 今まで通りのやり方（一枚絵を貼る）
-                image_stream = io.BytesIO()
-                is_success, buffer = cv2.imencode(".jpg", cv_img)
-                image_stream.write(buffer)
-                slide.shapes.add_picture(image_stream, 0, 0, width=prs.slide_width, height=prs.slide_height)
+            # === 図形・背景処理 ===
+            object_rects = []
+            status_text.text(f"P.{current_page_num}: 図表オブジェクトを分離中...")
+
+            if mode == "通常モード":
+                # 背景を一枚絵として圧縮して配置
+                img_stream = io.BytesIO()
+                # JPEG圧縮品質を適用
+                cv2.imencode(".jpg", cv_img, [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality])[1].tofile(img_stream)
+                slide.shapes.add_picture(img_stream, 0, 0, width=prs.slide_width, height=prs.slide_height)
             
-            else:
-                # ★分解モード（背景は白、図だけ切り抜いて貼る）
-                # 1. オブジェクト（図表）の検出と貼り付け
-                objects = extract_objects(cv_img, min_area=min_area_size, dilation=dilation_iter)
-                
-                # オブジェクト領域を記憶（あとで文字が重なっているか判定するため）
-                object_rects = [] 
-
+            else: # 分解モード
+                objects = extract_objects(cv_img, min_area=min_area_size)
                 for (ox, oy, ow, oh) in objects:
-                    # 切り抜き
                     crop_img = cv_img[oy:oy+oh, ox:ox+ow]
-                    
-                    # PPT配置
                     img_stream = io.BytesIO()
-                    cv2.imencode(".png", crop_img)[1].tofile(img_stream)
+                    # 切り抜いた図は綺麗に見せたいのでPNG(可逆圧縮)または高画質JPEG
+                    cv2.imencode(".jpg", crop_img, [int(cv2.IMWRITE_JPEG_QUALITY), max(90, jpeg_quality)])[1].tofile(img_stream)
                     
                     pp_x = int(ox * scale_ppt_x)
                     pp_y = int(oy * scale_ppt_y)
                     pp_w = int(ow * scale_ppt_x)
                     pp_h = int(oh * scale_ppt_y)
-                    
                     slide.shapes.add_picture(img_stream, pp_x, pp_y, width=pp_w, height=pp_h)
                     object_rects.append((ox, oy, ow, oh))
 
-            # === 文字の配置（共通処理） ===
-            OCR_ZOOM = 2.0
-            ocr_img, w_ocr, h_ocr = preprocess_image_for_ocr(cv_img, OCR_ZOOM)
-            d = pytesseract.image_to_data(ocr_img, lang='jpn', output_type=Output.DICT)
-            
-            blocks = {}
-            n_boxes = len(d['text'])
-            for j in range(n_boxes):
-                text = d['text'][j].strip()
-                conf = int(d['conf'][j])
-                if conf > 40 and text != "" and not (len(text)==1 and text in ".,-_"):
-                    b_id = d['block_num'][j]
-                    if b_id not in blocks:
-                        blocks[b_id] = {'text': [], 'left': [], 'top': [], 'width': [], 'height': []}
-                    blocks[b_id]['text'].append(text)
-                    blocks[b_id]['left'].append(d['left'][j])
-                    blocks[b_id]['top'].append(d['top'][j])
-                    blocks[b_id]['width'].append(d['width'][j])
-                    blocks[b_id]['height'].append(d['height'][j])
-
-            for b_id, b_data in blocks.items():
-                text_content = "".join(b_data['text'])
-                
-                ocr_x = min(b_data['left'])
-                ocr_y = min(b_data['top'])
-                ocr_w = max([l+w for l,w in zip(b_data['left'], b_data['width'])]) - ocr_x
-                ocr_h = max([t+h for t,h in zip(b_data['top'], b_data['height'])]) - ocr_y
-                
-                orig_x, orig_y = int(ocr_x/OCR_ZOOM), int(ocr_y/OCR_ZOOM)
-                orig_w, orig_h = int(ocr_w/OCR_ZOOM), int(ocr_h/OCR_ZOOM)
-
-                # 分解モードの場合、図表エリアと重なっている文字は「図の中の文字」として無視する
-                # （二重に表示されるのを防ぐため）
-                is_inside_object = False
-                if mode == "分解モード（図表切り抜き＋文字）":
-                    center_x = orig_x + orig_w/2
-                    center_y = orig_y + orig_h/2
-                    for (ox, oy, ow, oh) in object_rects:
-                        if ox < center_x < ox+ow and oy < center_y < oy+oh:
-                            is_inside_object = True
-                            break
-                
-                if is_inside_object:
-                    continue
-
-                avg_h = (sum(b_data['height'])/len(b_data['height']))/OCR_ZOOM
-                est_pt = (prs.slide_height.inches * 72) * (avg_h/h_orig) * 0.75
-                font_pt = max(8, min(est_pt * 1.0, 100)) # 倍率は調整可
-
-                font_rgb = (0,0,0)
-                if detect_color:
-                    y1, y2 = max(0, orig_y), min(h_orig, orig_y + orig_h)
-                    x1, x2 = max(0, orig_x), min(w_orig, orig_x + orig_w)
-                    roi = cv_img[y1:y2, x1:x2]
-                    if roi.size > 0:
-                        r, g, b = get_dominant_color(roi)
-                        font_rgb = (r, g, b)
-
-                pp_x = int(orig_x * scale_ppt_x)
-                pp_y = int(orig_y * scale_ppt_y)
-                pp_w = int(orig_w * scale_ppt_x)
-
-                if pp_w > Inches(0.2):
-                    try:
-                        txBox = slide.shapes.add_textbox(pp_x, pp_y, pp_w, Inches(font_pt/72*1.5))
-                        tf = txBox.text_frame
-                        tf.word_wrap = True
-                        p = tf.paragraphs[0]
-                        p.text = text_content
-                        p.font.size = Pt(font_pt)
-                        p.font.color.rgb = RGBColor(*font_rgb)
-                        
-                        if bg_fill:
-                            fill = txBox.fill
-                            fill.solid()
-                            fill.fore_color.rgb = RGBColor(255, 255, 255)
-                    except: pass
-
-            progress_bar.progress((i + 1) / total_pages)
-
-        output_pptx = io.BytesIO()
-        prs.save(output_pptx)
-        output_pptx.seek(0)
-        
-        st.success("🎉 分解完了！")
-        st.download_button("ダウンロード 📥", output_pptx, uploaded_file.name.replace(".pdf", "_分解版.pptx"))
+            # === 文字
