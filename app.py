@@ -3,24 +3,22 @@ import sys
 import os
 import io
 
-# === 1. ページ設定 ===
+# === 1. ページ設定 (必ず一番最初) ===
 st.set_page_config(page_title="Biz PDF Converter Ultimate", layout="centered")
 
 # ===========================
-# テーマ設定関数
+# テーマ設定関数 (修正版)
 # ===========================
 def apply_theme(theme):
+    # ベースのCSS（タグなしで記述）
     base_css = """
-    <style>
         img { border: 1px solid #ddd; border-radius: 5px; }
-        /* ガイド部分を見やすくカスタマイズ */
         .streamlit-expanderHeader { font-weight: bold; font-size: 1.2em; background-color: #f0f2f6; border-radius: 5px; }
         .stMarkdown h3 { border-bottom: 2px solid #ddd; padding-bottom: 5px; margin-top: 20px; }
-        /* フロー図のような矢印を見やすく */
-        .flow-arrow { font-size: 1.5em; font-weight: bold; color: #4CAF50; text-align: center; }
-    </style>
     """
     
+    # テーマごとのCSS（変数 css に格納）
+    css = ""
     if theme == "ビジネス (通常)":
         color_primary = "#4CAF50"
         text_color = "#2E7D32"
@@ -83,7 +81,8 @@ def apply_theme(theme):
             .stProgress .st-bo {{ background: linear-gradient(90deg, #E60033, #FFF100, #FF69B4, #800080); }}
         """
     
-    st.markdown(base_css + css + "</style>", unsafe_allow_html=True)
+    # ★修正ポイント：ここでまとめてタグで囲むことでエラーを防ぐ
+    st.markdown(f"<style>{base_css} {css}</style>", unsafe_allow_html=True)
 
 # === 2. ライブラリ読み込み ===
 try:
@@ -144,7 +143,7 @@ ocr_enabled = st.sidebar.checkbox("テキスト抽出 (ノートへ)", value=Tru
 st.title("🏆 Biz PDF Converter Ultimate")
 st.caption("PDFをパワーポイントに変換する、ビジネス専用ツールです。")
 
-# ★★★ 親切丁寧な使い方ガイド (ストーリー＆フロー付き) ★★★
+# ★★★ 親切丁寧な使い方ガイド ★★★
 with st.expander("🔰 初めての方はこちら（目的・使い方・NotebookLM活用）", expanded=False):
     tab0, tab1, tab2, tab3 = st.tabs(["📖 はじめに・目的", "① 使い方ステップ", "② 便利な機能", "③ 文字の直し方"])
     
@@ -287,7 +286,7 @@ if uploaded_files:
         col1, col2 = st.columns([1, 2])
         with col1:
             preview_page_idx = st.number_input("確認ページ", min_value=1, max_value=len(first_doc), value=1) - 1
-            st.info("上の「🔰 初めての方はこちら」で詳しい手順を確認できます。")
+            st.info("左のメニューで明るさなどを調整できます！")
         with col2:
             page = first_doc[preview_page_idx]
             pix = page.get_pixmap(matrix=fitz.Matrix(1.0, 1.0))
@@ -308,6 +307,7 @@ if uploaded_files:
 
         # --- 変換実行 ---
         st.divider()
+        # ボタンのラベル
         btn_label = "Z伝説 変換スタート！" if selected_theme != "ビジネス (通常)" else "変換スタート"
         
         if st.button(btn_label, type="primary"):
