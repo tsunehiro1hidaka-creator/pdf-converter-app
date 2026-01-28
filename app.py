@@ -4,20 +4,21 @@ import os
 import io
 import datetime
 
-# === 1. ページ設定 ===
+# === 1. ページ設定 (必ず一番最初) ===
 st.set_page_config(page_title="Biz PDF Converter Pro", layout="centered")
 
 # ===========================
 # テーマ設定関数
 # ===========================
 def apply_theme(theme):
+    # ベースCSS
     base_css = """
-    <style>
         img { border: 1px solid #ddd; border-radius: 5px; }
         .streamlit-expanderHeader { font-weight: bold; font-size: 1.2em; background-color: #f0f2f6; border-radius: 5px; }
         .stMarkdown h3 { border-bottom: 2px solid #ddd; padding-bottom: 5px; margin-top: 20px; }
     """
     
+    css = ""
     if theme == "ビジネス (通常)":
         color_primary = "#4CAF50"
         text_color = "#2E7D32"
@@ -42,7 +43,7 @@ def apply_theme(theme):
             }}
             .stProgress .st-bo {{ background: linear-gradient(90deg, #E60033, #FFF100, #FF69B4, #800080); }}
         """
-    else: # 他の色は省略（ビジネス用なのでシンプルに）
+    else:
         color_primary = "#4CAF50"
         css = f"""
             .stButton>button {{ background-color: white; color: #2E7D32; border: 2px solid {color_primary}; border-radius: 5px; font-weight: bold; width: 100%; }}
@@ -75,7 +76,6 @@ st.sidebar.header("🎨 テーマ & テンプレート")
 selected_theme = st.sidebar.selectbox("テーマカラー", ["ビジネス (通常)", "箱推し (全員)"])
 apply_theme(selected_theme)
 
-# ★新機能: 会社テンプレートのアップロード
 template_file = st.sidebar.file_uploader("会社のPPTXテンプレート (任意)", type="pptx", help="会社のロゴ入りスライドなどを適用したい場合にアップロードしてください。")
 
 st.sidebar.divider()
@@ -89,7 +89,6 @@ else: zoom_factor=2.0; jpeg_quality=95
 
 st.sidebar.divider()
 st.sidebar.header("🛡️ 加工・編集")
-# ★新機能: PDFパスワード
 pdf_password = st.sidebar.text_input("PDFパスワード (必要な場合)", type="password")
 
 footer_text = st.sidebar.text_input("フッター文字", placeholder="例：© 2024 My Company")
@@ -110,19 +109,61 @@ ocr_enabled = st.sidebar.checkbox("テキスト抽出 (ノートへ)", value=Tru
 st.title("🏢 Biz PDF Converter Pro")
 st.caption("パスワード解除・テンプレート適用に対応した、企業導入モデルです。")
 
+# ★★★ 親切丁寧な使い方ガイド（タブ形式を復活・Pro機能を追加） ★★★
 with st.expander("🔰 初めての方はこちら（使い方マニュアル）", expanded=False):
-    st.markdown("""
-    ### Pro版の新機能
+    tab1, tab2, tab3 = st.tabs(["① 基本の使い方", "② Pro機能・テクニック", "③ 文字の直し方"])
     
-    **🔐 パスワード付きPDFに対応**
-    左メニューの「PDFパスワード」に入力すれば、ロックされた重要書類も変換できます。
-    
-    **🎨 会社のテンプレートに対応**
-    左メニューの一番上で、会社の定型PPTX（ロゴ入りなど）をアップロードすると、そのデザインを使ってスライドを作成します。
-    
-    **📂 スマートなファイル名**
-    ダウンロード時のファイル名に、自動で「日付」や「_変換済」が付与され、整理しやすくなりました。
-    """)
+    with tab1:
+        st.markdown("""
+        ### まずはここから！ 3ステップで変換
+        
+        **1. ファイルを入れる**
+        下の「Drag and drop file here」の枠に、PDFファイルを置いてください。
+        * 📁 フォルダからマウスで引っ張ってきてもOKです。
+        * 複数のファイルを一度に入れても大丈夫です（自動で1つのパワポにまとまります）。
+        
+        **2. プレビューを確認**
+        ファイルを入れると、画面の真ん中に「画像のプレビュー」が出ます。
+        * **赤枠の部分**が、白く塗りつぶされて消える場所です。
+        * 左メニューの「✂️ ロゴ消し」のつまみを動かして、消したい場所（ページ番号など）を調整してください。
+        
+        **3. 変換スタート**
+        準備ができたら、ピンクや緑色の**「変換スタート」ボタン**を押してください。
+        しばらく待つと、「完了しました！」と出て、ダウンロードボタンが表示されます。
+        """)
+        
+    with tab2:
+        st.markdown("""
+        ### Pro版の高度な機能
+        左側のメニュー（サイドバー）で、いろいろな調整ができます。
+        
+        **🔐 パスワード付きPDFを変換したい**
+        * 給与明細や契約書など、パスワードがかかっているファイルの場合、左メニューの**「PDFパスワード」**に入力してください。自動で解除して変換します。
+        
+        **🎨 会社のテンプレートを使いたい**
+        * 左メニューの一番上にある**「会社のPPTXテンプレート」**に、いつも使っている表紙やロゴ入りのパワポファイルをアップロードしてください。そのデザインの上にPDFを貼り付けます。
+        
+        **🏢 会社名やコピーライトを入れたい**
+        * **「フッター文字」**に会社名を入れると、全ページの左下に自動で入ります。
+        * **「透かし文字」**に「社外秘」などと入れると、ページの中央に薄くスタンプされます。
+        """)
+        
+    with tab3:
+        st.markdown("""
+        ### パワポにした後、文字を直したい！
+        このアプリは、レイアウト崩れを防ぐために「ページ全体を画像」として貼り付けます。
+        そのため、文字を直接カチカチして打ち直すことはできません。
+        
+        **その代わり、「修正用パッチ」機能を使います！**
+        
+        1. 変換後のパワポを開くと、右上に**「白い箱（テキストボックス）」**が置いてあります。
+        2. 直したい文字の上に、その白い箱をマウスで移動させて、上から被せます。
+        3. 箱の中に、正しい文字を入力してください。
+        
+        **💡 ヒント：元の文章データはどこ？**
+        パワポの画面の下にある**「ノート」**という欄を見てください。
+        AIが読み取った文章がそこに全部入っていますので、そこからコピーして使うと便利です。
+        """)
 
 # ===========================
 # 関数定義
@@ -131,7 +172,6 @@ with st.expander("🔰 初めての方はこちら（使い方マニュアル）
 def load_pdf_doc(file_bytes, password=""):
     try:
         doc = fitz.open(stream=file_bytes, filetype="pdf")
-        # パスワード解除トライ
         if doc.is_encrypted:
             if not doc.authenticate(password):
                 st.error("🔒 パスワードが間違っているか、入力されていません。サイドバーで入力してください。")
@@ -173,10 +213,9 @@ if uploaded_files:
     docs = []
     total_pages_all = 0
     
-    # 読み込み処理
     for up_file in uploaded_files:
         file_bytes = up_file.read()
-        doc = load_pdf_doc(file_bytes, pdf_password) # パスワード対応
+        doc = load_pdf_doc(file_bytes, pdf_password)
         if doc:
             docs.append((up_file.name, doc))
             total_pages_all += len(doc)
@@ -191,7 +230,7 @@ if uploaded_files:
         with col1:
             preview_page_idx = st.number_input("確認ページ", min_value=1, max_value=len(first_doc), value=1) - 1
             if pdf_password and first_doc.is_encrypted:
-                st.success("🔓 パスワード解除に成功しました")
+                st.success("🔓 パスワード解除成功")
         with col2:
             page = first_doc[preview_page_idx]
             pix = page.get_pixmap(matrix=fitz.Matrix(1.0, 1.0))
@@ -218,25 +257,20 @@ if uploaded_files:
             p_bar = st.progress(0)
             status_area = st.empty()
             
-            # ★テンプレート適用ロジック
             if template_file:
                 try:
                     prs = Presentation(template_file)
-                    # テンプレートの最後のレイアウト（白紙に近いことが多い）を使用
                     layout = prs.slide_layouts[-1]
                 except:
-                    st.warning("テンプレートの読み込みに失敗しました。標準設定を使用します。")
                     prs = Presentation()
                     layout = prs.slide_layouts[6]
             else:
                 prs = Presentation()
                 layout = prs.slide_layouts[6]
             
-            # スライドサイズ決定
             page1 = first_doc[0]
             pdf_w, pdf_h = page1.rect.width, page1.rect.height
             
-            # テンプレートがない場合のみサイズ変更（ある場合はテンプレートに従う）
             if not template_file:
                 if slide_sizing == "PDFに合わせる (推奨)":
                     prs.slide_width = Emu(pdf_w * 12700); prs.slide_height = Emu(pdf_h * 12700)
@@ -249,7 +283,6 @@ if uploaded_files:
             for filename, doc in docs:
                 status_area.text(f"処理中: {filename} ...")
                 for i, page in enumerate(doc):
-                    # 画像化
                     pix = page.get_pixmap(matrix=fitz.Matrix(zoom_factor, zoom_factor))
                     img_pil = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
                     cv_img = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
@@ -260,13 +293,11 @@ if uploaded_files:
                         cv2.rectangle(cv_img, (w_orig - int(erase_w * zoom_factor), h_orig - int(erase_h * zoom_factor)), 
                                       (w_orig, h_orig), (255, 255, 255), -1)
                     
-                    # 配置
                     slide = prs.slides.add_slide(layout)
                     img_bytes = cv2.imencode(".jpg", cv_img, [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality])[1].tobytes()
                     image_stream = io.BytesIO(img_bytes)
                     slide.shapes.add_picture(image_stream, 0, 0, width=prs.slide_width, height=prs.slide_height)
                     
-                    # 修正用パッチ
                     if use_patch:
                         patch_box = slide.shapes.add_textbox(prs.slide_width - Inches(2.5), Inches(0.2), Inches(2), Inches(0.5))
                         patch_box.fill.solid()
@@ -276,7 +307,6 @@ if uploaded_files:
                         tf_patch.paragraphs[0].font.size = Pt(10)
                         tf_patch.paragraphs[0].font.color.rgb = RGBColor(150, 150, 150)
 
-                    # フッター
                     page_number_val = current_cnt + 1
                     txBox = slide.shapes.add_textbox(prs.slide_width - Inches(1.5), prs.slide_height - Inches(0.5), Inches(1), Inches(0.3))
                     tf = txBox.text_frame
@@ -294,7 +324,6 @@ if uploaded_files:
                         p2.font.size = Pt(10)
                         p2.font.color.rgb = RGBColor(150, 150, 150)
 
-                    # OCR
                     if ocr_enabled:
                         try:
                             ocr_img = preprocess_image_for_ocr(cv_img)
@@ -314,13 +343,8 @@ if uploaded_files:
             prs.save(out_ppt)
             out_ppt.seek(0)
             
-            # ★スマートリネーム機能
             today_str = datetime.datetime.now().strftime('%Y%m%d')
             base_name = os.path.splitext(docs[0][0])[0]
-            
-            if len(docs) > 1:
-                dl_name = f"まとめ資料_変換済_{today_str}.pptx"
-            else:
-                dl_name = f"{base_name}_変換済_{today_str}.pptx"
+            dl_name = f"まとめ資料_変換済_{today_str}.pptx" if len(docs) > 1 else f"{base_name}_変換済_{today_str}.pptx"
             
             st.download_button("📥 パワポをダウンロード", out_ppt, dl_name)
