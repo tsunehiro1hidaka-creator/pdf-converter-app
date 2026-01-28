@@ -105,6 +105,7 @@ if uploaded_file is not None:
 
         # --- プレビュー ---
         st.subheader("プレビュー (白塗り範囲の確認)")
+        # プレビューは高速化のため標準画質(zoom=1.0)固定
         pix = page1.get_pixmap(matrix=fitz.Matrix(1.0, 1.0))
         img_prev = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
         cv_prev = cv2.cvtColor(np.array(img_prev), cv2.COLOR_RGB2BGR)
@@ -127,9 +128,8 @@ if uploaded_file is not None:
             
             prs = Presentation()
             
-            # ★ここが進化ポイント：スライドサイズの決定
+            # スライドサイズの決定
             if slide_sizing == "PDFに合わせる (推奨)":
-                # PDFのポイント単位(pt)をそのままパワポのEmu単位に変換
                 # 1 pt = 12700 Emu
                 prs.slide_width = Emu(pdf_w * 12700)
                 prs.slide_height = Emu(pdf_h * 12700)
@@ -151,11 +151,7 @@ if uploaded_file is not None:
                 
                 # 2. 白塗り
                 if use_erase:
-                    # PyMuPDFのzoomに合わせて消す範囲も調整する
-                    # 画面のスライダーは「元サイズ基準」だと思われるので、倍率をかける
-                    # ただしプレビューとズレると困るので、今回はスライダー値を
-                    # 「表示されている画像に対するピクセル数」として簡易的に扱うため
-                    # 画像右下からの固定ピクセル除去とする
+                    # Zoom率に合わせて座標を調整
                     cv2.rectangle(cv_img, (w_orig - int(erase_w * zoom_factor), h_orig - int(erase_h * zoom_factor)), 
                                   (w_orig, h_orig), (255, 255, 255), -1)
                 
@@ -164,14 +160,11 @@ if uploaded_file is not None:
                 img_bytes = cv2.imencode(".jpg", cv_img, [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality])[1].tobytes()
                 image_stream = io.BytesIO(img_bytes)
                 
-                # 画像をスライドいっぱいに貼る
                 slide.shapes.add_picture(image_stream, 0, 0, width=prs.slide_width, height=prs.slide_height)
                 
                 # 4. OCR (ノート)
                 if ocr_enabled:
                     try:
-                        # OCRは重いので、軽量設定のときはスキップするか、解像度を落とす手もあるが
-                        # ここではそのまま実行（エラー時はスルー）
                         ocr_img = preprocess_image_for_ocr(cv_img)
                         text = pytesseract.image_to_string(ocr_img, lang='jpn+eng')
                         slide.notes_slide.notes_text_frame.text = text
@@ -182,6 +175,17 @@ if uploaded_file is not None:
             
             status_area.success("完了しました！")
             
+            # 保存
             out_ppt = io.BytesIO()
             prs.save(out_ppt)
-            out_ppt.
+            out_ppt.seek(0)
+            
+            file_label = "軽量" if quality_mode.startswith("軽量") else "高画質"
+            
+            # ダウンロードボタン
+            st.download_button(
+                label=f"📥 パワポをダウンロード ({file_label}版)",
+                data=out_ppt,
+                file_name=f"{uploaded_file.name}_{file_label}.pptx",
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            )
