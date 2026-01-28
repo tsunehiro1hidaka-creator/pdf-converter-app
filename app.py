@@ -7,74 +7,64 @@ import io
 st.set_page_config(page_title="Biz PDF Converter Ultimate", layout="centered")
 
 # ===========================
-# ★新機能：ももクロカラー・テーマ切替
+# テーマ設定関数
 # ===========================
 def apply_theme(theme):
     base_css = """
     <style>
         img { border: 1px solid #ddd; border-radius: 5px; }
-        .streamlit-expanderHeader { font-weight: bold; font-size: 1.1em; }
+        /* ガイド部分を見やすくカスタマイズ */
+        .streamlit-expanderHeader { font-weight: bold; font-size: 1.2em; background-color: #f0f2f6; border-radius: 5px; }
+        .stMarkdown h3 { border-bottom: 2px solid #ddd; padding-bottom: 5px; margin-top: 20px; }
     """
     
     if theme == "ビジネス (通常)":
-        color_primary = "#4CAF50" # 緑
+        color_primary = "#4CAF50"
         text_color = "#2E7D32"
-        btn_text = "white"
         css = f"""
             .stButton>button {{ background-color: white; color: {text_color}; border: 2px solid {color_primary}; border-radius: 5px; font-weight: bold; width: 100%; }}
             .stButton>button:hover {{ background-color: {color_primary}; color: white; }}
             h1 {{ color: {text_color}; }}
-            .streamlit-expanderHeader {{ color: {text_color}; }}
             .stProgress .st-bo {{ background-color: {color_primary}; }}
         """
-    
     elif theme == "かなこぉ (赤)":
-        color_primary = "#E60033" # 赤
+        color_primary = "#E60033"
         css = f"""
             .stApp {{ background-color: #FFF0F0; }}
             .stButton>button {{ background-color: {color_primary}; color: white; border: none; border-radius: 20px; font-weight: bold; width: 100%; }}
             .stButton>button:hover {{ background-color: #B30026; }}
             h1 {{ color: {color_primary}; text-shadow: 2px 2px 4px #ffaaaa; }}
-            .streamlit-expanderHeader {{ color: {color_primary}; }}
             .stProgress .st-bo {{ background-color: {color_primary}; }}
         """
-
     elif theme == "しおりん (黄)":
-        color_primary = "#FFF100" # 黄
+        color_primary = "#FFF100"
         text_color = "#333333"
         css = f"""
             .stApp {{ background-color: #FFFFF0; }}
             .stButton>button {{ background-color: {color_primary}; color: {text_color}; border: 2px solid #FFD700; border-radius: 20px; font-weight: bold; width: 100%; }}
             .stButton>button:hover {{ background-color: #FFD700; }}
             h1 {{ color: #F2C000; }}
-            .streamlit-expanderHeader {{ color: #F2C000; }}
             .stProgress .st-bo {{ background-color: {color_primary}; }}
         """
-
     elif theme == "あーりん (ピンク)":
-        color_primary = "#FF69B4" # ピンク
+        color_primary = "#FF69B4"
         css = f"""
             .stApp {{ background-color: #FFF0F5; }}
             .stButton>button {{ background-color: {color_primary}; color: white; border: none; border-radius: 20px; font-weight: bold; width: 100%; }}
             .stButton>button:hover {{ background-color: #FF1493; }}
             h1 {{ color: {color_primary}; font-family: 'Comic Sans MS', sans-serif; }}
-            .streamlit-expanderHeader {{ color: {color_primary}; }}
             .stProgress .st-bo {{ background-color: {color_primary}; }}
         """
-
     elif theme == "れにちゃん (紫)":
-        color_primary = "#800080" # 紫
+        color_primary = "#800080"
         css = f"""
             .stApp {{ background-color: #F8F0FF; }}
             .stButton>button {{ background-color: {color_primary}; color: white; border: none; border-radius: 20px; font-weight: bold; width: 100%; }}
             .stButton>button:hover {{ background-color: #4B0082; }}
             h1 {{ color: {color_primary}; }}
-            .streamlit-expanderHeader {{ color: {color_primary}; }}
             .stProgress .st-bo {{ background-color: {color_primary}; }}
         """
-
     elif theme == "箱推し (全員)":
-        # 4色グラデーション
         css = f"""
             .stApp {{ background: linear-gradient(135deg, #fff0f0 25%, #fffff0 25%, #fffff0 50%, #fff0f5 50%, #fff0f5 75%, #f8f0ff 75%); }}
             .stButton>button {{ 
@@ -109,7 +99,7 @@ except ImportError as e:
     st.stop()
 
 # ===========================
-# サイドバー設定 (テーマ選択を最上部へ)
+# サイドバー設定
 # ===========================
 st.sidebar.header("🎨 テーマカラー")
 selected_theme = st.sidebar.selectbox(
@@ -128,13 +118,13 @@ elif quality_mode == "標準": zoom_factor=1.5; jpeg_quality=80
 else: zoom_factor=2.0; jpeg_quality=95
 
 st.sidebar.subheader("✨ 画質補正")
-brightness_val = st.sidebar.slider("明るさ調整", -50, 50, 0)
-contrast_val = st.sidebar.slider("コントラスト", -50, 50, 0)
+brightness_val = st.sidebar.slider("明るさ調整", -50, 50, 0, help="右に動かすと明るくなります")
+contrast_val = st.sidebar.slider("コントラスト", -50, 50, 0, help="右に動かすと文字がくっきりします")
 
 st.sidebar.divider()
 st.sidebar.header("🛡️ 加工・編集")
-footer_text = st.sidebar.text_input("フッター文字", placeholder="© 2024 My Company")
-watermark_text = st.sidebar.text_input("透かし文字", value="")
+footer_text = st.sidebar.text_input("フッター文字", placeholder="例：© 2024 株式会社〇〇")
+watermark_text = st.sidebar.text_input("透かし文字", value="", placeholder="社外秘 など")
 use_patch = st.sidebar.checkbox("修正用パッチを配置", value=True)
 
 st.sidebar.subheader("✂️ ロゴ消し")
@@ -151,16 +141,61 @@ ocr_enabled = st.sidebar.checkbox("テキスト抽出 (ノートへ)", value=Tru
 st.title("🏆 Biz PDF Converter Ultimate")
 st.caption("PDFをパワーポイントに変換する、ビジネス専用ツールです。")
 
-with st.expander("🔰 初めての方へ（使い方の手順）", expanded=False):
-    st.markdown("""
-    **ようこそ！** 手順は以下の通りです。
-    1. **アップロード:** 下の枠にPDFを置きます。
-    2. **設定:** 左のメニューで色やサイズを調整します。
-    3. **確認:** プレビューで赤枠（消える範囲）などを確認します。
-    4. **変換:** 「変換スタート」を押して待ちます。
+# ★★★ 親切丁寧な使い方ガイド ★★★
+with st.expander("🔰 初めての方はこちら（使い方マニュアル）", expanded=False):
+    tab1, tab2, tab3 = st.tabs(["① 基本の使い方", "② 便利なテクニック", "③ 文字の直し方"])
     
-    ※右上の「修正用パッチ」は、文字修正用の白い箱です。パワポ上でドラッグして使ってください。
-    """)
+    with tab1:
+        st.markdown("""
+        ### まずはここから！ 3ステップで変換
+        
+        **1. ファイルを入れる**
+        下の「Drag and drop file here」と書かれている枠の中に、PDFファイルを置いてください。
+        * 📁 フォルダからマウスで引っ張ってきてもOKです。
+        * 複数のファイルを一度に入れても大丈夫です（1つのパワポにまとまります）。
+        
+        **2. プレビューを確認**
+        ファイルを入れると、画面の真ん中に「画像のプレビュー」が出ます。
+        * **赤枠の部分**が、白く塗りつぶされて消える場所です。
+        * 左メニューの「✂️ ロゴ消し」のつまみを動かして、消したい場所（ページ番号など）を調整してください。
+        
+        **3. 変換スタート**
+        準備ができたら、ピンクや緑色の**「変換スタート」ボタン**を押してください。
+        しばらく待つと、「完了しました！」と出て、ダウンロードボタンが表示されます。
+        """)
+        
+    with tab2:
+        st.markdown("""
+        ### もっときれいに作りたい時は？
+        左側のメニュー（サイドバー）で、いろいろな調整ができます。
+        
+        **✨ 文字が薄くて読みづらい**
+        * 左メニューの**「✨ 画質補正」**にある**「コントラスト」**のつまみを右に動かしてください。文字が黒くくっきりします。
+        
+        **🏢 会社名やコピーライトを入れたい**
+        * **「フッター文字」**に会社名を入れると、全ページの左下に自動で入ります。
+        * **「透かし文字」**に「社外秘」などと入れると、ページの中央に薄くスタンプされます。
+        
+        **📏 サイズがおかしい？**
+        * 基本は「PDFに合わせる」でOKですが、強制的に横長にしたい場合は「16:9」を選んでください。
+        """)
+        
+    with tab3:
+        st.markdown("""
+        ### パワポにした後、文字を直したい！
+        このアプリは、レイアウト崩れを防ぐために「ページ全体を画像」として貼り付けます。
+        そのため、文字を直接カチカチして打ち直すことはできません。
+        
+        **その代わり、「修正用パッチ」機能を使います！**
+        
+        1. 変換後のパワポを開くと、右上に**「白い箱（テキストボックス）」**が置いてあります。
+        2. 直したい文字の上に、その白い箱をマウスで移動させて、上から被せます。
+        3. 箱の中に、正しい文字を入力してください。
+        
+        **💡 ヒント：元の文章データはどこ？**
+        パワポの画面の下にある**「ノート」**という欄を見てください。
+        AIが読み取った文章がそこに全部入っていますので、そこからコピーして使うと便利です。
+        """)
 
 # ===========================
 # 関数定義
@@ -222,7 +257,7 @@ if uploaded_files:
         col1, col2 = st.columns([1, 2])
         with col1:
             preview_page_idx = st.number_input("確認ページ", min_value=1, max_value=len(first_doc), value=1) - 1
-            st.info("サイドバーの一番上でカラーテーマを変更できます！")
+            st.info("上の「使い方マニュアル」で詳しい手順を確認できます。")
         with col2:
             page = first_doc[preview_page_idx]
             pix = page.get_pixmap(matrix=fitz.Matrix(1.0, 1.0))
@@ -243,7 +278,6 @@ if uploaded_files:
 
         # --- 変換実行 ---
         st.divider()
-        # ボタンのラベルも少し楽しく
         btn_label = "Z伝説 変換スタート！" if selected_theme != "ビジネス (通常)" else "変換スタート"
         
         if st.button(btn_label, type="primary"):
@@ -320,7 +354,9 @@ if uploaded_files:
                     current_cnt += 1
                     p_bar.progress(current_cnt / total_pages_all)
             
-            status_area.success("完了しました！ ゼーーーット！")
+            success_msg = "完了しました！ ゼーーーット！" if selected_theme != "ビジネス (通常)" else "変換が完了しました！"
+            status_area.success(success_msg)
+            
             out_ppt = io.BytesIO()
             prs.save(out_ppt)
             out_ppt.seek(0)
