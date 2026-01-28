@@ -37,7 +37,7 @@ st.markdown("目次生成・画質補正・フッター挿入まで完備した�
 # 関数定義
 # ===========================
 
-@st.cache_data(show_spinner=False)
+# ★修正：エラーの原因だった @st.cache_data を削除しました
 def load_pdf_doc(file_bytes):
     try:
         return fitz.open(stream=file_bytes, filetype="pdf")
@@ -55,7 +55,6 @@ def adjust_image(cv_img, brightness=0, contrast=0):
         return cv_img
     
     # コントラストと明るさの計算式
-    # contrast: 1.0が基準。スライダーは-50~50なので、0.5~1.5くらいに変換
     alpha = (contrast + 100.0) / 100.0 
     beta = brightness
     
@@ -227,8 +226,8 @@ if uploaded_files:
                     image_stream = io.BytesIO(img_bytes)
                     slide.shapes.add_picture(image_stream, 0, 0, width=prs.slide_width, height=prs.slide_height)
                     
-                    # ★フッター追加（ページ番号・テキスト）
-                    # スライド番号計算（目次がある場合は+1スタート）
+                    # ★フッター追加
+                    # スライド番号計算
                     page_number_val = current_cnt + 1 + (1 if use_toc else 0)
                     
                     # 右下：ページ番号
