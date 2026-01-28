@@ -6,16 +6,91 @@ import io
 # === 1. ページ設定 ===
 st.set_page_config(page_title="Biz PDF Converter Ultimate", layout="centered")
 
-# UIスタイル
-st.markdown("""
-<style>
-    .stButton>button { border-radius: 5px; font-weight: bold; width: 100%; }
-    .stProgress .st-bo { background-color: #4CAF50; }
-    img { border: 1px solid #ddd; border-radius: 5px; }
-    /* ガイド部分を見やすく */
-    .streamlit-expanderHeader { font-weight: bold; font-size: 1.1em; color: #2E7D32; }
-</style>
-""", unsafe_allow_html=True)
+# ===========================
+# ★新機能：ももクロカラー・テーマ切替
+# ===========================
+def apply_theme(theme):
+    base_css = """
+    <style>
+        img { border: 1px solid #ddd; border-radius: 5px; }
+        .streamlit-expanderHeader { font-weight: bold; font-size: 1.1em; }
+    """
+    
+    if theme == "ビジネス (通常)":
+        color_primary = "#4CAF50" # 緑
+        text_color = "#2E7D32"
+        btn_text = "white"
+        css = f"""
+            .stButton>button {{ background-color: white; color: {text_color}; border: 2px solid {color_primary}; border-radius: 5px; font-weight: bold; width: 100%; }}
+            .stButton>button:hover {{ background-color: {color_primary}; color: white; }}
+            h1 {{ color: {text_color}; }}
+            .streamlit-expanderHeader {{ color: {text_color}; }}
+            .stProgress .st-bo {{ background-color: {color_primary}; }}
+        """
+    
+    elif theme == "かなこぉ (赤)":
+        color_primary = "#E60033" # 赤
+        css = f"""
+            .stApp {{ background-color: #FFF0F0; }}
+            .stButton>button {{ background-color: {color_primary}; color: white; border: none; border-radius: 20px; font-weight: bold; width: 100%; }}
+            .stButton>button:hover {{ background-color: #B30026; }}
+            h1 {{ color: {color_primary}; text-shadow: 2px 2px 4px #ffaaaa; }}
+            .streamlit-expanderHeader {{ color: {color_primary}; }}
+            .stProgress .st-bo {{ background-color: {color_primary}; }}
+        """
+
+    elif theme == "しおりん (黄)":
+        color_primary = "#FFF100" # 黄
+        text_color = "#333333"
+        css = f"""
+            .stApp {{ background-color: #FFFFF0; }}
+            .stButton>button {{ background-color: {color_primary}; color: {text_color}; border: 2px solid #FFD700; border-radius: 20px; font-weight: bold; width: 100%; }}
+            .stButton>button:hover {{ background-color: #FFD700; }}
+            h1 {{ color: #F2C000; }}
+            .streamlit-expanderHeader {{ color: #F2C000; }}
+            .stProgress .st-bo {{ background-color: {color_primary}; }}
+        """
+
+    elif theme == "あーりん (ピンク)":
+        color_primary = "#FF69B4" # ピンク
+        css = f"""
+            .stApp {{ background-color: #FFF0F5; }}
+            .stButton>button {{ background-color: {color_primary}; color: white; border: none; border-radius: 20px; font-weight: bold; width: 100%; }}
+            .stButton>button:hover {{ background-color: #FF1493; }}
+            h1 {{ color: {color_primary}; font-family: 'Comic Sans MS', sans-serif; }}
+            .streamlit-expanderHeader {{ color: {color_primary}; }}
+            .stProgress .st-bo {{ background-color: {color_primary}; }}
+        """
+
+    elif theme == "れにちゃん (紫)":
+        color_primary = "#800080" # 紫
+        css = f"""
+            .stApp {{ background-color: #F8F0FF; }}
+            .stButton>button {{ background-color: {color_primary}; color: white; border: none; border-radius: 20px; font-weight: bold; width: 100%; }}
+            .stButton>button:hover {{ background-color: #4B0082; }}
+            h1 {{ color: {color_primary}; }}
+            .streamlit-expanderHeader {{ color: {color_primary}; }}
+            .stProgress .st-bo {{ background-color: {color_primary}; }}
+        """
+
+    elif theme == "箱推し (全員)":
+        # 4色グラデーション
+        css = f"""
+            .stApp {{ background: linear-gradient(135deg, #fff0f0 25%, #fffff0 25%, #fffff0 50%, #fff0f5 50%, #fff0f5 75%, #f8f0ff 75%); }}
+            .stButton>button {{ 
+                background: linear-gradient(90deg, #E60033, #FFF100, #FF69B4, #800080); 
+                color: white; border: none; border-radius: 20px; font-weight: bold; width: 100%; text-shadow: 1px 1px 2px black;
+            }}
+            .stButton>button:hover {{ opacity: 0.9; }}
+            h1 {{ 
+                background: linear-gradient(90deg, #E60033, #F2C000, #FF69B4, #800080);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }}
+            .stProgress .st-bo {{ background: linear-gradient(90deg, #E60033, #FFF100, #FF69B4, #800080); }}
+        """
+    
+    st.markdown(base_css + css + "</style>", unsafe_allow_html=True)
 
 # === 2. ライブラリ読み込み ===
 try:
@@ -33,39 +108,58 @@ except ImportError as e:
     st.error(f"ライブラリ不足: {e}")
     st.stop()
 
+# ===========================
+# サイドバー設定 (テーマ選択を最上部へ)
+# ===========================
+st.sidebar.header("🎨 テーマカラー")
+selected_theme = st.sidebar.selectbox(
+    "推し色チェンジ", 
+    ["ビジネス (通常)", "箱推し (全員)", "かなこぉ (赤)", "しおりん (黄)", "あーりん (ピンク)", "れにちゃん (紫)"]
+)
+apply_theme(selected_theme)
+
+st.sidebar.divider()
+st.sidebar.header("📄 出力設定")
+slide_sizing = st.sidebar.radio("スライドサイズ", ["PDFに合わせる (推奨)", "16:9 (ワイド)", "4:3 (標準)"])
+quality_mode = st.sidebar.select_slider("画質設定", options=["軽量", "標準", "高画質"], value="標準")
+
+if quality_mode == "軽量": zoom_factor=1.0; jpeg_quality=70
+elif quality_mode == "標準": zoom_factor=1.5; jpeg_quality=80
+else: zoom_factor=2.0; jpeg_quality=95
+
+st.sidebar.subheader("✨ 画質補正")
+brightness_val = st.sidebar.slider("明るさ調整", -50, 50, 0)
+contrast_val = st.sidebar.slider("コントラスト", -50, 50, 0)
+
+st.sidebar.divider()
+st.sidebar.header("🛡️ 加工・編集")
+footer_text = st.sidebar.text_input("フッター文字", placeholder="© 2024 My Company")
+watermark_text = st.sidebar.text_input("透かし文字", value="")
+use_patch = st.sidebar.checkbox("修正用パッチを配置", value=True)
+
+st.sidebar.subheader("✂️ ロゴ消し")
+use_erase = st.sidebar.checkbox("ロゴ/不要領域の白塗り", value=True)
+erase_w = st.sidebar.slider("右端カット (px)", 0, 800, 350)
+erase_h = st.sidebar.slider("下端カット (px)", 0, 500, 180)
+
+st.sidebar.divider()
+ocr_enabled = st.sidebar.checkbox("テキスト抽出 (ノートへ)", value=True)
+
+# ===========================
+# メイン画面
+# ===========================
 st.title("🏆 Biz PDF Converter Ultimate")
 st.caption("PDFをパワーポイントに変換する、ビジネス専用ツールです。")
 
-# ===========================
-# ★ここが追加ポイント：親切な使い方ガイド
-# ===========================
 with st.expander("🔰 初めての方へ（使い方の手順）", expanded=False):
     st.markdown("""
-    **ようこそ！ このツールは、PDF資料を「編集できるパワーポイント」に変換します。**
-    以下の手順で操作してください。
+    **ようこそ！** 手順は以下の通りです。
+    1. **アップロード:** 下の枠にPDFを置きます。
+    2. **設定:** 左のメニューで色やサイズを調整します。
+    3. **確認:** プレビューで赤枠（消える範囲）などを確認します。
+    4. **変換:** 「変換スタート」を押して待ちます。
     
-    ---
-    
-    ### 1️⃣ ファイルをアップロード
-    下の「PDFファイルをアップロード」と書かれた場所に、PDFファイルを置いてください。（複数を一度に選んでもOKです）
-    
-    ### 2️⃣ 設定を調整（左のメニュー）
-    画面左側のメニューで、細かい調整ができます。
-    * **スライドサイズ:** 基本は「PDFに合わせる」のままでOKです。
-    * **画質補正:** 文字が薄いときは「コントラスト」を右にずらすとクッキリします。
-    * **ロゴ消し:** 資料の下にある不要なページ番号などを消せます。「プレビュー」を見ながら赤枠を調整してください。
-    
-    ### 3️⃣ プレビューで確認
-    画面の中央に「仕上がりプレビュー」が表示されます。
-    赤枠の部分が消える範囲です。問題なければ次に進みます。
-    
-    ### 4️⃣ 変換スタート
-    「変換スタート」ボタンを押してください。処理が終わると、ダウンロードボタンが出てきます。
-    
-    ---
-    **💡 便利な機能：文字の修正について**
-    変換後のパワーポイントには、右上に**「修正用パッチ（白い箱）」**を用意しています。
-    文字化けしている箇所や直したい文字の上に、この白い箱をマウスで移動させて、上から正しい文字を入力してください。
+    ※右上の「修正用パッチ」は、文字修正用の白い箱です。パワポ上でドラッグして使ってください。
     """)
 
 # ===========================
@@ -105,37 +199,6 @@ def add_watermark(cv_img, text="CONFIDENTIAL"):
     return cv_img
 
 # ===========================
-# サイドバー設定
-# ===========================
-st.sidebar.header("🎨 デザイン・画質")
-slide_sizing = st.sidebar.radio("スライドサイズ", ["PDFに合わせる (推奨)", "16:9 (ワイド)", "4:3 (標準)"])
-quality_mode = st.sidebar.select_slider("画質設定", options=["軽量", "標準", "高画質"], value="標準")
-
-if quality_mode == "軽量": zoom_factor=1.0; jpeg_quality=70
-elif quality_mode == "標準": zoom_factor=1.5; jpeg_quality=80
-else: zoom_factor=2.0; jpeg_quality=95
-
-st.sidebar.subheader("✨ 画質補正")
-brightness_val = st.sidebar.slider("明るさ調整", -50, 50, 0, help="暗いPDFを明るくします")
-contrast_val = st.sidebar.slider("コントラスト (くっきり)", -50, 50, 0, help="文字をくっきりさせます")
-
-st.sidebar.divider()
-st.sidebar.header("🛡️ 加工・編集")
-footer_text = st.sidebar.text_input("フッター文字 (左下)", placeholder="© 2024 My Company")
-watermark_text = st.sidebar.text_input("透かし文字 (中央)", value="")
-
-# 修正用パッチ設定
-use_patch = st.sidebar.checkbox("修正用パッチを配置する", value=True, help="スライド右上に、文字修正用の白いテキストボックスを準備します。")
-
-st.sidebar.subheader("✂️ ロゴ消し")
-use_erase = st.sidebar.checkbox("ロゴ/不要領域の白塗り", value=True)
-erase_w = st.sidebar.slider("右端カット (px)", 0, 800, 350)
-erase_h = st.sidebar.slider("下端カット (px)", 0, 500, 180)
-
-st.sidebar.divider()
-ocr_enabled = st.sidebar.checkbox("テキスト抽出 (ノートへ)", value=True)
-
-# ===========================
 # メイン処理
 # ===========================
 uploaded_files = st.file_uploader("PDFファイルをアップロード (複数可)", type="pdf", accept_multiple_files=True)
@@ -159,7 +222,7 @@ if uploaded_files:
         col1, col2 = st.columns([1, 2])
         with col1:
             preview_page_idx = st.number_input("確認ページ", min_value=1, max_value=len(first_doc), value=1) - 1
-            st.info("左のメニューで明るさなどを調整できます。")
+            st.info("サイドバーの一番上でカラーテーマを変更できます！")
         with col2:
             page = first_doc[preview_page_idx]
             pix = page.get_pixmap(matrix=fitz.Matrix(1.0, 1.0))
@@ -180,7 +243,10 @@ if uploaded_files:
 
         # --- 変換実行 ---
         st.divider()
-        if st.button("変換スタート", type="primary"):
+        # ボタンのラベルも少し楽しく
+        btn_label = "Z伝説 変換スタート！" if selected_theme != "ビジネス (通常)" else "変換スタート"
+        
+        if st.button(btn_label, type="primary"):
             p_bar = st.progress(0)
             status_area = st.empty()
             prs = Presentation()
@@ -198,7 +264,7 @@ if uploaded_files:
             for filename, doc in docs:
                 status_area.text(f"処理中: {filename} ...")
                 for i, page in enumerate(doc):
-                    # 1. 画像化 & 補正
+                    # 画像化 & 補正
                     pix = page.get_pixmap(matrix=fitz.Matrix(zoom_factor, zoom_factor))
                     img_pil = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
                     cv_img = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
@@ -209,7 +275,7 @@ if uploaded_files:
                         cv2.rectangle(cv_img, (w_orig - int(erase_w * zoom_factor), h_orig - int(erase_h * zoom_factor)), 
                                       (w_orig, h_orig), (255, 255, 255), -1)
                     
-                    # 2. 配置
+                    # 配置
                     slide = prs.slides.add_slide(prs.slide_layouts[6])
                     img_bytes = cv2.imencode(".jpg", cv_img, [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality])[1].tobytes()
                     image_stream = io.BytesIO(img_bytes)
@@ -225,7 +291,7 @@ if uploaded_files:
                         tf_patch.paragraphs[0].font.size = Pt(10)
                         tf_patch.paragraphs[0].font.color.rgb = RGBColor(150, 150, 150)
 
-                    # 3. フッター追加
+                    # フッター
                     page_number_val = current_cnt + 1
                     txBox = slide.shapes.add_textbox(prs.slide_width - Inches(1.5), prs.slide_height - Inches(0.5), Inches(1), Inches(0.3))
                     tf = txBox.text_frame
@@ -242,7 +308,7 @@ if uploaded_files:
                         p2.font.size = Pt(10)
                         p2.font.color.rgb = RGBColor(150, 150, 150)
 
-                    # 4. OCR
+                    # OCR
                     if ocr_enabled:
                         try:
                             ocr_img = preprocess_image_for_ocr(cv_img)
@@ -254,7 +320,7 @@ if uploaded_files:
                     current_cnt += 1
                     p_bar.progress(current_cnt / total_pages_all)
             
-            status_area.success("完了しました！")
+            status_area.success("完了しました！ ゼーーーット！")
             out_ppt = io.BytesIO()
             prs.save(out_ppt)
             out_ppt.seek(0)
