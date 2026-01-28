@@ -26,18 +26,18 @@ try:
     from pptx.util import Inches, Emu, Pt
     from pptx.enum.text import PP_ALIGN
     from pptx.dml.color import RGBColor
+    from pptx.dml.fill import MSO_FILL
 except ImportError as e:
     st.error(f"ライブラリ不足: {e}")
     st.stop()
 
 st.title("🏆 Biz PDF Converter Ultimate")
-st.markdown("目次生成・画質補正・フッター挿入まで完備した、最終形態のツールです。")
+st.markdown("画質補正・フッター・修正用パッチまで完備した、実務用・決定版ツールです。")
 
 # ===========================
 # 関数定義
 # ===========================
 
-# ★修正：エラーの原因だった @st.cache_data を削除しました
 def load_pdf_doc(file_bytes):
     try:
         return fitz.open(stream=file_bytes, filetype="pdf")
@@ -50,14 +50,10 @@ def preprocess_image_for_ocr(cv_img):
     return binary
 
 def adjust_image(cv_img, brightness=0, contrast=0):
-    """画像の明るさとコントラストを調整"""
     if brightness == 0 and contrast == 0:
         return cv_img
-    
-    # コントラストと明るさの計算式
     alpha = (contrast + 100.0) / 100.0 
     beta = brightness
-    
     adjusted = cv2.convertScaleAbs(cv_img, alpha=alpha, beta=beta)
     return adjusted
 
@@ -78,7 +74,6 @@ def add_watermark(cv_img, text="CONFIDENTIAL"):
 # サイドバー設定
 # ===========================
 st.sidebar.header("🎨 デザイン・画質")
-
 slide_sizing = st.sidebar.radio("スライドサイズ", ["PDFに合わせる (推奨)", "16:9 (ワイド)", "4:3 (標準)"])
 quality_mode = st.sidebar.select_slider("画質設定", options=["軽量", "標準", "高画質"], value="標準")
 
@@ -92,10 +87,11 @@ contrast_val = st.sidebar.slider("コントラスト (くっきり)", -50, 50, 0
 
 st.sidebar.divider()
 st.sidebar.header("🛡️ 加工・編集")
-
-use_toc = st.sidebar.checkbox("目次スライドを作成", value=True)
 footer_text = st.sidebar.text_input("フッター文字 (左下)", placeholder="© 2024 My Company")
 watermark_text = st.sidebar.text_input("透かし文字 (中央)", value="")
+
+# ★新機能: 修正用パッチのオンオフ
+use_patch = st.sidebar.checkbox("修正用パッチを配置する", value=True, help="スライド右上に、文字修正用の白いテキストボックスを準備します。")
 
 st.sidebar.subheader("✂️ ロゴ消し")
 use_erase = st.sidebar.checkbox("ロゴ/不要領域の白塗り", value=True)
@@ -111,10 +107,8 @@ ocr_enabled = st.sidebar.checkbox("テキスト抽出 (ノートへ)", value=Tru
 uploaded_files = st.file_uploader("PDFファイルをアップロード (複数可)", type="pdf", accept_multiple_files=True)
 
 if uploaded_files:
-    # ファイル読み込み
     docs = []
     total_pages_all = 0
-    
     for up_file in uploaded_files:
         file_bytes = up_file.read()
         doc = load_pdf_doc(file_bytes)
@@ -128,28 +122,19 @@ if uploaded_files:
         # --- プレビュー ---
         st.divider()
         st.subheader("👁️ 仕上がりプレビュー")
-        
         col1, col2 = st.columns([1, 2])
         with col1:
             preview_page_idx = st.number_input("確認ページ", min_value=1, max_value=len(first_doc), value=1) - 1
             st.info("明るさやコントラストを調整して、文字が見やすいか確認してください。")
-        
         with col2:
             page = first_doc[preview_page_idx]
             pix = page.get_pixmap(matrix=fitz.Matrix(1.0, 1.0))
             img_prev = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
             cv_prev = cv2.cvtColor(np.array(img_prev), cv2.COLOR_RGB2BGR)
             h, w = cv_prev.shape[:2]
-
-            # 画質補正プレビュー
             cv_prev = adjust_image(cv_prev, brightness_val, contrast_val)
-
-            # 透かし
             if watermark_text: cv_prev = add_watermark(cv_prev, watermark_text)
-            
-            # ロゴ消し
             if use_erase:
-                # 赤枠表示（調整用）
                 preview_display = cv_prev.copy()
                 cv2.rectangle(preview_display, (w - erase_w, h - erase_h), (w, h), (0, 0, 255), 4)
                 overlay = preview_display.copy()
@@ -157,7 +142,6 @@ if uploaded_files:
                 cv2.addWeighted(overlay, 0.5, preview_display, 0.5, 0, preview_display)
             else:
                 preview_display = cv_prev
-
             st.image(cv2.cvtColor(preview_display, cv2.COLOR_BGR2RGB), caption="プレビュー (赤枠部分が消去されます)", use_container_width=True)
 
         # --- 変換実行 ---
@@ -165,10 +149,8 @@ if uploaded_files:
         if st.button("変換スタート", type="primary"):
             p_bar = st.progress(0)
             status_area = st.empty()
-            
             prs = Presentation()
             
-            # スライドサイズ決定
             page1 = first_doc[0]
             pdf_w, pdf_h = page1.rect.width, page1.rect.height
             if slide_sizing == "PDFに合わせる (推奨)":
@@ -178,44 +160,17 @@ if uploaded_files:
             else:
                 prs.slide_width = Inches(10); prs.slide_height = Inches(7.5)
 
-            # ★目次スライドの作成 (Index)
-            if use_toc and len(docs) > 0:
-                toc_slide = prs.slides.add_slide(prs.slide_layouts[1]) # Title and Content layout
-                title = toc_slide.shapes.title
-                title.text = "目次"
-                
-                content = toc_slide.placeholders[1]
-                tf = content.text_frame
-                tf.text = "本資料の構成" # 最初の行
-                
-                current_p = 1
-                if use_toc: current_p += 1 # 目次分ずらす
-
-                for filename, doc in docs:
-                    p = tf.add_paragraph()
-                    p.text = f"{filename} ... P.{current_p}"
-                    p.level = 0
-                    current_p += len(doc)
-
             current_cnt = 0
-            
             for filename, doc in docs:
                 status_area.text(f"処理中: {filename} ...")
-                
                 for i, page in enumerate(doc):
                     # 1. 画像化 & 補正
                     pix = page.get_pixmap(matrix=fitz.Matrix(zoom_factor, zoom_factor))
                     img_pil = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
                     cv_img = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
                     h_orig, w_orig = cv_img.shape[:2]
-                    
-                    # 画質補正
                     cv_img = adjust_image(cv_img, brightness_val, contrast_val)
-                    
-                    # 透かし
                     if watermark_text: cv_img = add_watermark(cv_img, watermark_text)
-                    
-                    # ロゴ消し
                     if use_erase:
                         cv2.rectangle(cv_img, (w_orig - int(erase_w * zoom_factor), h_orig - int(erase_h * zoom_factor)), 
                                       (w_orig, h_orig), (255, 255, 255), -1)
@@ -226,11 +181,19 @@ if uploaded_files:
                     image_stream = io.BytesIO(img_bytes)
                     slide.shapes.add_picture(image_stream, 0, 0, width=prs.slide_width, height=prs.slide_height)
                     
-                    # ★フッター追加
-                    # スライド番号計算
-                    page_number_val = current_cnt + 1 + (1 if use_toc else 0)
-                    
-                    # 右下：ページ番号
+                    # ★新機能: 修正用パッチの配置
+                    if use_patch:
+                        # 右上に小さく配置
+                        patch_box = slide.shapes.add_textbox(prs.slide_width - Inches(2.5), Inches(0.2), Inches(2), Inches(0.5))
+                        patch_box.fill.solid() # 塗りつぶし有効化
+                        patch_box.fill.fore_color.rgb = RGBColor(255, 255, 255) # 白色
+                        tf_patch = patch_box.text_frame
+                        tf_patch.text = "ここに修正文字を入力して移動"
+                        tf_patch.paragraphs[0].font.size = Pt(10)
+                        tf_patch.paragraphs[0].font.color.rgb = RGBColor(150, 150, 150) # 薄いグレー文字
+
+                    # 3. フッター追加
+                    page_number_val = current_cnt + 1
                     txBox = slide.shapes.add_textbox(prs.slide_width - Inches(1.5), prs.slide_height - Inches(0.5), Inches(1), Inches(0.3))
                     tf = txBox.text_frame
                     p = tf.paragraphs[0]
@@ -238,8 +201,6 @@ if uploaded_files:
                     p.font.size = Pt(12)
                     p.font.color.rgb = RGBColor(100, 100, 100)
                     p.alignment = PP_ALIGN.RIGHT
-
-                    # 左下：フッターテキスト
                     if footer_text:
                         txBox2 = slide.shapes.add_textbox(Inches(0.5), prs.slide_height - Inches(0.5), Inches(5), Inches(0.3))
                         tf2 = txBox2.text_frame
@@ -248,7 +209,7 @@ if uploaded_files:
                         p2.font.size = Pt(10)
                         p2.font.color.rgb = RGBColor(150, 150, 150)
 
-                    # 3. OCR
+                    # 4. OCR
                     if ocr_enabled:
                         try:
                             ocr_img = preprocess_image_for_ocr(cv_img)
@@ -257,7 +218,6 @@ if uploaded_files:
                             slide.notes_slide.notes_text_frame.text = header + text
                         except:
                             slide.notes_slide.notes_text_frame.text = ""
-                    
                     current_cnt += 1
                     p_bar.progress(current_cnt / total_pages_all)
             
@@ -265,6 +225,5 @@ if uploaded_files:
             out_ppt = io.BytesIO()
             prs.save(out_ppt)
             out_ppt.seek(0)
-            
             dl_name = "Combined_Slides.pptx" if len(docs) > 1 else f"{os.path.splitext(docs[0][0])[0]}_slide.pptx"
             st.download_button("📥 パワポをダウンロード", out_ppt, dl_name)
