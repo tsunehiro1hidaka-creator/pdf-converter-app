@@ -127,4 +127,199 @@ def merge_text_blocks(blocks, spacing_limit=40):
         vertical_dist = curr_top - prev_bottom
         horizontal_diff = abs(curr_left - prev_left)
         
-        if 0 < vertical_dist < spacing_
+        if 0 < vertical_dist < spacing_limit and horizontal_diff < 50:
+            # 結合する！
+            prev['text'].append("\n") # 改行を入れる
+            prev['text'].extend(curr['text'])
+            prev['left'].extend(curr['left'])
+            prev['top'].extend(curr['top'])
+            prev['width'].extend(curr['width'])
+            prev['height'].extend(curr['height'])
+        else:
+            # 新しいブロックとして開始
+            current_merge_id += 1
+            merged_blocks[current_merge_id] = curr.copy()
+            
+    return merged_blocks
+
+# ===========================
+# メイン処理フロー
+# ===========================
+
+if uploaded_file is not None:
+    # PDF基本情報
+    pdf_bytes = uploaded_file.read()
+    pdf_info = pdfinfo_from_bytes(pdf_bytes)
+    max_pages = pdf_info["Pages"]
+    
+    # --- プレビュー機能 ---
+    st.subheader(f"👁️ リアルタイムプレビュー (P.{preview_page})")
+    col_prev1, col_prev2 = st.columns([1, 1])
+    
+    with col_prev1:
+        st.caption("処理前")
+        # プレビュー用に1枚だけ変換
+        if preview_page > max_pages: preview_page = max_pages
+        preview_img = convert_from_bytes(pdf_bytes, first_page=preview_page, last_page=preview_page)[0]
+        st.image(preview_img, use_container_width=True)
+
+    with col_prev2:
+        st.caption("処理イメージ（赤枠＝消える場所 / 青枠＝認識された図）")
+        # OpenCVで加工プレビューを表示
+        cv_prev = np.array(preview_img)
+        cv_prev = cv2.cvtColor(cv_prev, cv2.COLOR_RGB2BGR)
+        h, w = cv_prev.shape[:2]
+        
+        # ロゴ消しエリア（赤塗りつぶし）
+        if use_erase:
+            overlay = cv_prev.copy()
+            cv2.rectangle(overlay, (w - erase_width, h - erase_height), (w, h), (0, 0, 255), -1)
+            cv2.addWeighted(overlay, 0.4, cv_prev, 0.6, 0, cv_prev)
+            
+        # 図形認識エリア（青枠）
+        if mode.startswith("分解"):
+            objects = extract_objects(cv_prev, min_area_size)
+            for (x, y, ow, oh) in objects:
+                cv2.rectangle(cv_prev, (x, y), (x+ow, y+oh), (255, 0, 0), 5)
+        
+        st.image(cv2.cvtColor(cv_prev, cv2.COLOR_BGR2RGB), use_container_width=True)
+
+    # --- 変換実行エリア ---
+    st.divider()
+    page_range = st.slider("変換ページ範囲", 1, max_pages, (1, min(max_pages, 5)))
+    start_p, end_p = page_range
+    
+    if st.button("🔥 設定を確定して変換スタート", type="primary"):
+        process_count = end_p - start_p + 1
+        progress_bar = st.progress(0)
+        status = st.empty()
+        
+        # テンプレート読み込み
+        if template_file:
+            prs = Presentation(template_file)
+        else:
+            prs = Presentation()
+            prs.slide_width = Inches(13.333)
+            prs.slide_height = Inches(7.5)
+        
+        blank_layout = prs.slide_layouts[len(prs.slide_layouts)-1]
+
+        # 本番変換処理
+        images = convert_from_bytes(pdf_bytes, dpi=300, first_page=start_p, last_page=end_p)
+        
+        for i, image in enumerate(images):
+            current_num = start_p + i
+            status.text(f"処理中: {i+1}/{process_count} (P.{current_num}) - 画像解析...")
+            
+            cv_img = np.array(image)
+            cv_img = cv2.cvtColor(cv_img, cv2.COLOR_RGB2BGR)
+            h_orig, w_orig = cv_img.shape[:2]
+            scale_x = prs.slide_width / w_orig
+            scale_y = prs.slide_height / h_orig
+            
+            slide = prs.slides.add_slide(blank_layout)
+            object_rects = []
+
+            # 1. ロゴ消し適用
+            if use_erase:
+                mask = np.zeros((h_orig, w_orig), np.uint8)
+                cv2.rectangle(mask, (w_orig - erase_width, h_orig - erase_height), (w_orig, h_orig), 255, -1)
+                cv_img = cv2.inpaint(cv_img, mask, 3, cv2.INPAINT_TELEA)
+
+            # 2. 画像/図表配置
+            if mode.startswith("分解"):
+                objects = extract_objects(cv_img, min_area_size)
+                for (ox, oy, ow, oh) in objects:
+                    crop = cv_img[oy:oy+oh, ox:ox+ow]
+                    stream = io.BytesIO()
+                    cv2.imencode(".jpg", crop, [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality])[1].tofile(stream)
+                    slide.shapes.add_picture(stream, int(ox*scale_x), int(oy*scale_y), width=int(ow*scale_x), height=int(oh*scale_y))
+                    object_rects.append((ox, oy, ow, oh))
+            else:
+                stream = io.BytesIO()
+                cv2.imencode(".jpg", cv_img, [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality])[1].tofile(stream)
+                slide.shapes.add_picture(stream, 0, 0, width=prs.slide_width, height=prs.slide_height)
+
+            # 3. テキスト処理
+            status.text(f"処理中: {i+1}/{process_count} (P.{current_num}) - OCRと段落結合...")
+            ocr_img, _, _ = preprocess_image_for_ocr(cv_img, 2.0)
+            d = pytesseract.image_to_data(ocr_img, lang='jpn', output_type=Output.DICT)
+            
+            raw_blocks = {}
+            for j in range(len(d['text'])):
+                text = d['text'][j].strip()
+                if int(d['conf'][j]) > 40 and text != "" and not (len(text)==1 and text in ".,-_|"):
+                    b_id = d['block_num'][j]
+                    if b_id not in raw_blocks: raw_blocks[b_id] = {'text': [], 'left': [], 'top': [], 'width': [], 'height': []}
+                    raw_blocks[b_id]['text'].append(text)
+                    raw_blocks[b_id]['left'].append(d['left'][j])
+                    raw_blocks[b_id]['top'].append(d['top'][j])
+                    raw_blocks[b_id]['width'].append(d['width'][j])
+                    raw_blocks[b_id]['height'].append(d['height'][j])
+            
+            # ★段落結合AIの発動★
+            if merge_lines:
+                # 結合前にOCR座標(拡大版)から元画像座標へ戻す必要があるが、
+                # merge_text_blocksは相対距離で判定するのでOCR座標のままで結合してから縮尺計算する
+                final_blocks = merge_text_blocks(raw_blocks, spacing_limit=int(line_spacing_limit * 2.0)) # 2.0はOCR拡大分
+            else:
+                final_blocks = raw_blocks
+
+            # テキスト配置
+            for b_id, b_data in final_blocks.items():
+                text_content = "".join(b_data['text']) if not merge_lines else "".join([t if t=="\n" else t for t in b_data['text']])
+                text_content = text_content.replace("\n", "\n") # 改行コード正規化
+
+                # 座標計算（全要素の包含矩形）
+                ocr_x = min(b_data['left'])
+                ocr_y = min(b_data['top'])
+                ocr_w = max([l+w for l,w in zip(b_data['left'], b_data['width'])]) - ocr_x
+                ocr_h = max([t+h for t,h in zip(b_data['top'], b_data['height'])]) - ocr_y
+                
+                orig_x, orig_y = int(ocr_x/2.0), int(ocr_y/2.0)
+                orig_w, orig_h = int(ocr_w/2.0), int(ocr_h/2.0)
+
+                # 重なり判定
+                if mode.startswith("分解"):
+                    cx, cy = orig_x + orig_w/2, orig_y + orig_h/2
+                    if any(ox < cx < ox+ow and oy < cy < oy+oh for (ox,oy,ow,oh) in object_rects): continue
+
+                # 配置
+                pp_x, pp_y = int(orig_x * scale_x), int(orig_y * scale_y)
+                pp_w = int(orig_w * scale_x)
+                
+                if pp_w > Inches(0.2):
+                    try:
+                        # フォントサイズ推定
+                        avg_h = (sum(b_data['height'])/len(b_data['height']))/2.0
+                        font_pt = max(9, min((prs.slide_height.inches*72)*(avg_h/h_orig)*0.8, 80))
+                        
+                        # 高さ自動調整（段落結合時は高さを長めに）
+                        box_h = Inches(font_pt/72 * 1.5 * (text_content.count('\n') + 1))
+                        
+                        txBox = slide.shapes.add_textbox(pp_x, pp_y, pp_w, box_h)
+                        tf = txBox.text_frame
+                        tf.word_wrap = True
+                        p = tf.paragraphs[0]
+                        p.text = text_content
+                        p.font.size = Pt(font_pt)
+                        
+                        # 色検出
+                        if True: # 常に色検出を試みる
+                            y1,y2 = max(0,orig_y), min(h_orig,orig_y+orig_h)
+                            x1,x2 = max(0,orig_x), min(w_orig,orig_x+orig_w)
+                            roi = cv_img[y1:y2, x1:x2]
+                            if roi.size > 0: 
+                                r,g,b = get_dominant_color(roi)
+                                p.font.color.rgb = RGBColor(r,g,b)
+                    except: pass
+            
+            progress_bar.progress((i + 1) / process_count)
+
+        # 完了
+        status.empty()
+        out = io.BytesIO()
+        prs.save(out)
+        out.seek(0)
+        st.success("🎉 変換完了！")
+        st.download_button(f"📥 ダウンロード", out, f"{uploaded_file.name}_GodMode.pptx")
