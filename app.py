@@ -1,4 +1,3 @@
-
 import streamlit as st
 import sys
 import os
@@ -9,9 +8,10 @@ import datetime
 st.set_page_config(page_title="Biz PDF Converter Pro", layout="centered")
 
 # ===========================
-# テーマ設定関数
+# テーマ設定関数 (全色復活・CSS修正済み)
 # ===========================
 def apply_theme(theme):
+    # ベースCSS
     base_css = """
         img { border: 1px solid #ddd; border-radius: 5px; }
         .streamlit-expanderHeader { font-weight: bold; font-size: 1.2em; background-color: #f0f2f6; border-radius: 5px; }
@@ -28,6 +28,43 @@ def apply_theme(theme):
             h1 {{ color: {text_color}; }}
             .stProgress .st-bo {{ background-color: {color_primary}; }}
         """
+    elif theme == "かなこぉ (赤)":
+        color_primary = "#E60033"
+        css = f"""
+            .stApp {{ background-color: #FFF0F0; }}
+            .stButton>button {{ background-color: {color_primary}; color: white; border: none; border-radius: 20px; font-weight: bold; width: 100%; }}
+            .stButton>button:hover {{ background-color: #B30026; }}
+            h1 {{ color: {color_primary}; text-shadow: 2px 2px 4px #ffaaaa; }}
+            .stProgress .st-bo {{ background-color: {color_primary}; }}
+        """
+    elif theme == "しおりん (黄)":
+        color_primary = "#FFF100"
+        text_color = "#333333"
+        css = f"""
+            .stApp {{ background-color: #FFFFF0; }}
+            .stButton>button {{ background-color: {color_primary}; color: {text_color}; border: 2px solid #FFD700; border-radius: 20px; font-weight: bold; width: 100%; }}
+            .stButton>button:hover {{ background-color: #FFD700; }}
+            h1 {{ color: #F2C000; }}
+            .stProgress .st-bo {{ background-color: {color_primary}; }}
+        """
+    elif theme == "あーりん (ピンク)":
+        color_primary = "#FF69B4"
+        css = f"""
+            .stApp {{ background-color: #FFF0F5; }}
+            .stButton>button {{ background-color: {color_primary}; color: white; border: none; border-radius: 20px; font-weight: bold; width: 100%; }}
+            .stButton>button:hover {{ background-color: #FF1493; }}
+            h1 {{ color: {color_primary}; font-family: 'Comic Sans MS', sans-serif; }}
+            .stProgress .st-bo {{ background-color: {color_primary}; }}
+        """
+    elif theme == "れにちゃん (紫)":
+        color_primary = "#800080"
+        css = f"""
+            .stApp {{ background-color: #F8F0FF; }}
+            .stButton>button {{ background-color: {color_primary}; color: white; border: none; border-radius: 20px; font-weight: bold; width: 100%; }}
+            .stButton>button:hover {{ background-color: #4B0082; }}
+            h1 {{ color: {color_primary}; }}
+            .stProgress .st-bo {{ background-color: {color_primary}; }}
+        """
     elif theme == "箱推し (全員)":
         css = f"""
             .stApp {{ background: linear-gradient(135deg, #fff0f0 25%, #fffff0 25%, #fffff0 50%, #fff0f5 50%, #fff0f5 75%, #f8f0ff 75%); }}
@@ -42,14 +79,6 @@ def apply_theme(theme):
                 -webkit-text-fill-color: transparent;
             }}
             .stProgress .st-bo {{ background: linear-gradient(90deg, #E60033, #FFF100, #FF69B4, #800080); }}
-        """
-    else:
-        color_primary = "#4CAF50"
-        css = f"""
-            .stButton>button {{ background-color: white; color: #2E7D32; border: 2px solid {color_primary}; border-radius: 5px; font-weight: bold; width: 100%; }}
-            .stButton>button:hover {{ background-color: {color_primary}; color: white; }}
-            h1 {{ color: #2E7D32; }}
-            .stProgress .st-bo {{ background-color: {color_primary}; }}
         """
 
     st.markdown(f"<style>{base_css} {css}</style>", unsafe_allow_html=True)
@@ -70,16 +99,13 @@ except ImportError as e:
     st.stop()
 
 # ===========================
-# サイドバー設定
+# サイドバー設定 (業務優先の順序に変更)
 # ===========================
-st.sidebar.header("🎨 テーマ & テンプレート")
-selected_theme = st.sidebar.selectbox("テーマカラー", ["ビジネス (通常)", "箱推し (全員)"])
-apply_theme(selected_theme)
 
+# 1. 出力・テンプレート設定 (最重要)
+st.sidebar.header("📄 出力設定")
 template_file = st.sidebar.file_uploader("会社のPPTXテンプレート (任意)", type="pptx", help="会社のロゴ入りスライドなどを適用したい場合にアップロードしてください。")
 
-st.sidebar.divider()
-st.sidebar.header("📄 出力設定")
 slide_sizing = st.sidebar.radio("スライドサイズ", ["PDFに合わせる (推奨)", "16:9 (ワイド)", "4:3 (標準)"])
 quality_mode = st.sidebar.select_slider("画質設定", options=["軽量", "標準", "高画質"], value="標準")
 
@@ -88,20 +114,33 @@ elif quality_mode == "標準": zoom_factor=1.5; jpeg_quality=80
 else: zoom_factor=2.0; jpeg_quality=95
 
 st.sidebar.divider()
+
+# 2. 加工・セキュリティ設定
 st.sidebar.header("🛡️ 加工・編集")
 pdf_password = st.sidebar.text_input("PDFパスワード (必要な場合)", type="password")
 
 footer_text = st.sidebar.text_input("フッター文字", placeholder="例：© 2024 My Company")
 watermark_text = st.sidebar.text_input("透かし文字", value="")
 use_patch = st.sidebar.checkbox("修正用パッチを配置", value=True)
+ocr_enabled = st.sidebar.checkbox("テキスト抽出 (ノートへ)", value=True)
 
-st.sidebar.subheader("✂️ ロゴ消し")
+st.sidebar.divider()
+
+# 3. ロゴ消し (調整系)
+st.sidebar.header("✂️ ロゴ消し調整")
 use_erase = st.sidebar.checkbox("ロゴ/不要領域の白塗り", value=True)
 erase_w = st.sidebar.slider("右端カット (px)", 0, 800, 350)
 erase_h = st.sidebar.slider("下端カット (px)", 0, 500, 180)
 
 st.sidebar.divider()
-ocr_enabled = st.sidebar.checkbox("テキスト抽出 (ノートへ)", value=True)
+
+# 4. おまけ機能 (一番下へ移動)
+with st.sidebar.expander("🎨 テーマカラー (おまけ)", expanded=False):
+    selected_theme = st.selectbox(
+        "推し色チェンジ", 
+        ["ビジネス (通常)", "箱推し (全員)", "かなこぉ (赤)", "しおりん (黄)", "あーりん (ピンク)", "れにちゃん (紫)"]
+    )
+apply_theme(selected_theme)
 
 # ===========================
 # メイン画面
@@ -109,9 +148,9 @@ ocr_enabled = st.sidebar.checkbox("テキスト抽出 (ノートへ)", value=Tru
 st.title("🏢 Biz PDF Converter Pro")
 st.caption("パスワード解除・テンプレート適用に対応した、企業導入モデルです。")
 
-# ★★★ 親切丁寧な使い方ガイド（フロー図＋全機能網羅） ★★★
+# ガイド (フロー図＋機能解説)
 with st.expander("🔰 初めての方はこちら（目的・使い方・NotebookLM活用）", expanded=False):
-    tab0, tab1, tab2, tab3 = st.tabs(["📖 はじめに・目的", "① 基本の使い方", "② Pro機能・テクニック", "③ 文字の直し方"])
+    tab0, tab1, tab2, tab3 = st.tabs(["📖 はじめに・目的", "① 基本の使い方", "② Pro機能", "③ 文字の直し方"])
     
     with tab0:
         st.markdown("""
@@ -213,12 +252,6 @@ def preprocess_image_for_ocr(cv_img):
     _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     return binary
 
-def adjust_image(cv_img, brightness=0, contrast=0):
-    if brightness == 0 and contrast == 0: return cv_img
-    alpha = (contrast + 100.0) / 100.0 
-    beta = brightness
-    return cv2.convertScaleAbs(cv_img, alpha=alpha, beta=beta)
-
 def add_watermark(cv_img, text="CONFIDENTIAL"):
     h, w = cv_img.shape[:2]
     overlay = cv_img.copy()
@@ -279,15 +312,18 @@ if uploaded_files:
 
         # --- 変換実行 ---
         st.divider()
+        # テーマがおまけ機能に入ったので、ボタンの文言変化も連動させる
         btn_label = "Z伝説 変換スタート！" if selected_theme == "箱推し (全員)" else "変換スタート"
         
         if st.button(btn_label, type="primary"):
             p_bar = st.progress(0)
             status_area = st.empty()
             
+            # テンプレート適用ロジック
             if template_file:
                 try:
                     prs = Presentation(template_file)
+                    # 最後のレイアウトを使う
                     layout = prs.slide_layouts[-1]
                 except:
                     prs = Presentation()
@@ -299,6 +335,7 @@ if uploaded_files:
             page1 = first_doc[0]
             pdf_w, pdf_h = page1.rect.width, page1.rect.height
             
+            # テンプレートがない場合のみサイズ設定
             if not template_file:
                 if slide_sizing == "PDFに合わせる (推奨)":
                     prs.slide_width = Emu(pdf_w * 12700); prs.slide_height = Emu(pdf_h * 12700)
