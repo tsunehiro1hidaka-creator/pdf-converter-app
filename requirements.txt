@@ -4,5 +4,5 @@ python-pptx
 pytesseract
 opencv-python-headless
 numpy
-streamlit-image-comparison
 deep-translator
+streamlit-image-comparison
