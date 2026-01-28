@@ -1,61 +1,56 @@
 import streamlit as st
 import sys
 import os
+import io
+import zipfile
 
-# === 1. ページ設定 ===
-st.set_page_config(page_title="Universe PDF Converter (PyMuPDF)", layout="wide")
+# === 1. ページ設定 (必ず一番最初に書く) ===
+st.set_page_config(page_title="Universe PDF Converter (Final)", layout="wide")
 
-# UIスタイル
+# UIスタイル調整
 st.markdown("""
 <style>
     .stButton>button { border-radius: 8px; font-weight: bold; border: 2px solid #4CAF50; }
     h1 { color: #2E7D32; }
+    .stProgress .st-bo { background-color: #4CAF50; }
 </style>
 """, unsafe_allow_html=True)
 
-# === 2. ライブラリ読み込みチェック ===
+# === 2. ライブラリ読み込みとエラーハンドリング ===
 try:
     import cv2
     import numpy as np
     import pytesseract
     from pytesseract import Output
-    import fitz  # ★ここが新エンジン (PyMuPDF)
+    import fitz  # PyMuPDF (高速PDFエンジン)
     from PIL import Image
     from pptx import Presentation
     from pptx.util import Inches, Pt
     from pptx.dml.color import RGBColor
     from pptx.enum.text import MSO_ANCHOR
-    import io
-    import zipfile
     from streamlit_image_comparison import image_comparison
     from deep_translator import GoogleTranslator
 except ImportError as e:
-    st.error(f"⚠️ ライブラリ不足: {e}")
-    st.info("requirements.txt に 'pymupdf' が含まれているか確認してください。")
+    st.error(f"⚠️ 起動エラー: {e}")
+    st.info("requirements.txt の記述を確認してください。")
     st.stop()
 
-st.title("🪐 Universe PDF Converter (脱Poppler版)")
+st.title("🪐 Universe PDF Converter (Complete Edition)")
 
 # ===========================
-# 関数定義 (PyMuPDFエンジン)
+# 関数定義
 # ===========================
 
 @st.cache_data(show_spinner=False)
 def load_pdf_images(file_bytes):
-    """
-    ★Popplerを使わず、PyMuPDFでPDFを画像化する（エラー知らず！）
-    """
+    """PyMuPDFを使ってPDFを高品質な画像リストに変換"""
     try:
         doc = fitz.open(stream=file_bytes, filetype="pdf")
         images = []
         for page in doc:
-            # 解像度設定 (zoom=2 で 144dpi相当, zoom=3 で 216dpi相当)
-            # OCR精度のため少し高めに設定
-            zoom = 2.0  
-            mat = fitz.Matrix(zoom, zoom)
+            # zoom=2.0 で約144dpi相当の高画質化
+            mat = fitz.Matrix(2.0, 2.0)
             pix = page.get_pixmap(matrix=mat)
-            
-            # Pixmap -> PIL Image変換
             img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
             images.append(img)
         return images
@@ -73,17 +68,24 @@ def get_pdf_info_simple(file_bytes):
 
 @st.cache_data(show_spinner=False)
 def translate_text(text, target_lang='ja'):
+    """翻訳処理（失敗時は原文を返す安全設計）"""
     try:
         if not text.strip(): return text
         translator = GoogleTranslator(source='auto', target=target_lang)
         return translator.translate(text)
-    except: return text
+    except:
+        return text
 
 def preprocess_image_for_ocr(cv_img, zoom_factor=1.0):
-    # PyMuPDFですでに拡大しているので、ここのZoomは控えめでOK
+    """OCR精度向上のための画像加工"""
+    # PyMuPDFですでに拡大されているため、追加の拡大は最小限に
     h, w = cv_img.shape[:2]
     new_w, new_h = int(w * zoom_factor), int(h * zoom_factor)
-    resized = cv2.resize(cv_img, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+    if zoom_factor != 1.0:
+        resized = cv2.resize(cv_img, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+    else:
+        resized = cv_img
+    
     gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
     enhanced = clahe.apply(gray)
@@ -91,6 +93,7 @@ def preprocess_image_for_ocr(cv_img, zoom_factor=1.0):
     return binary, new_w, new_h
 
 def extract_objects(cv_img, min_area=5000):
+    """図や写真のエリアを特定する"""
     gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
     thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (10, 10))
@@ -106,6 +109,7 @@ def extract_objects(cv_img, min_area=5000):
     return objects
 
 def sort_blocks_smart(blocks):
+    """2段組み対応のソートロジック"""
     if not blocks: return []
     block_list = []
     for bid, data in blocks.items():
@@ -123,6 +127,7 @@ def sort_blocks_smart(blocks):
     return left_col + right_col
 
 def merge_text_blocks_ordered(sorted_blocks, spacing_limit=50):
+    """近い段落を結合する"""
     if not sorted_blocks: return {}
     merged = {}
     curr_m_id = 0
@@ -147,7 +152,7 @@ def merge_text_blocks_ordered(sorted_blocks, spacing_limit=50):
     return merged
 
 # ===========================
-# サイドバー & メイン処理
+# サイドバー設定
 # ===========================
 st.sidebar.header("🎛️ 設定パネル")
 
@@ -155,7 +160,7 @@ with st.sidebar.expander("🌐 言語・翻訳"):
     do_translate = st.checkbox("自動翻訳", value=False)
     target_lang = st.selectbox("翻訳先", ["ja (日本語)", "en (英語)", "zh-CN (中国語)"])
     target_lang_code = target_lang.split()[0]
-    ocr_lang = "jpn+eng"
+    ocr_lang = "jpn+eng" # 基本設定
 
 with st.sidebar.expander("🛠️ デザイン・モード", expanded=True):
     mode = st.radio("モード", ["分解モード", "通常モード"])
@@ -170,16 +175,24 @@ with st.sidebar.expander("⚙️ 詳細設定"):
     smart_sort = st.checkbox("2段組み補正", value=True)
     merge_lines = st.checkbox("段落結合", value=True)
 
+# ===========================
+# メイン処理
+# ===========================
 uploaded_file = st.file_uploader("PDFファイルをアップロード", type="pdf")
 
 if uploaded_file is not None:
     file_bytes = uploaded_file.read()
     
-    # PyMuPDFで読み込み
+    # PDF基本情報取得
     info = get_pdf_info_simple(file_bytes)
     total_pages = info["Pages"]
     
-    with st.spinner("PDFエンジン(PyMuPDF)で読み込み中..."):
+    if total_pages == 0:
+        st.error("PDFを読み込めませんでした。暗号化されているか、破損している可能性があります。")
+        st.stop()
+
+    # 画像読み込み
+    with st.spinner("PDFエンジン(PyMuPDF)で解析中..."):
         images = load_pdf_images(file_bytes)
         if not images: st.stop()
 
@@ -191,16 +204,19 @@ if uploaded_file is not None:
     img_proc = cv2.cvtColor(np.array(images[preview_idx]), cv2.COLOR_RGB2BGR)
     h, w = img_proc.shape[:2]
 
+    # ロゴ消しプレビュー
     if use_erase:
         mask = np.zeros((h, w), np.uint8)
         cv2.rectangle(mask, (w - erase_w, h - erase_h), (w, h), 255, -1)
         img_proc = cv2.inpaint(img_proc, mask, 3, cv2.INPAINT_TELEA)
 
+    # 図形枠プレビュー
     if mode.startswith("分解"):
         objs = extract_objects(img_proc, min_area)
         for (ox, oy, ow, oh) in objs:
             cv2.rectangle(img_proc, (ox, oy), (ox+ow, oy+oh), (255, 120, 0), 4)
 
+    # タイトル判定線
     if detect_title:
         cv2.line(img_proc, (0, int(h*0.2)), (w, int(h*0.2)), (0, 255, 0), 2)
 
@@ -213,7 +229,7 @@ if uploaded_file is not None:
         in_memory=True
     )
 
-    # --- 変換 ---
+    # --- 変換実行 ---
     st.divider()
     c1, c2 = st.columns([2, 1])
     with c1:
@@ -225,8 +241,10 @@ if uploaded_file is not None:
     if btn:
         start_p, end_p = page_range
         process_cnt = end_p - start_p + 1
+        
+        # プログレスバーとステータス表示（DOMエラー回避のため分離）
         p_bar = st.progress(0)
-        status_area = st.empty() # 安定化のためmarkdown固定エリア
+        status_area = st.empty()
 
         prs = Presentation()
         prs.slide_width = Inches(13.333)
@@ -240,6 +258,7 @@ if uploaded_file is not None:
                 p_num = start_p + i
                 status_area.markdown(f"**Processing... {i+1}/{process_cnt} (P.{p_num})**")
                 
+                # OpenCV形式に変換
                 cv_img = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
                 h_orig, w_orig = cv_img.shape[:2]
                 scale_x = prs.slide_width / w_orig
@@ -247,31 +266,40 @@ if uploaded_file is not None:
                 
                 slide = prs.slides.add_slide(prs.slide_layouts[6])
 
+                # 1. ロゴ消し
                 if use_erase:
                     mask = np.zeros((h_orig, w_orig), np.uint8)
                     cv2.rectangle(mask, (w_orig - erase_w, h_orig - erase_h), (w_orig, h_orig), 255, -1)
                     cv_img = cv2.inpaint(cv_img, mask, 3, cv2.INPAINT_TELEA)
 
                 object_rects = []
+                # 2. 画像/図形の配置
                 if mode.startswith("分解"):
                     objs = extract_objects(cv_img, min_area)
                     for idx, (ox, oy, ow, oh) in enumerate(objs):
                         crop = cv_img[oy:oy+oh, ox:ox+ow]
-                        zf.writestr(f"assets/P{p_num}_fig{idx}.jpg", cv2.imencode(".jpg", crop)[1].tobytes())
-                        s = io.BytesIO(cv2.imencode(".jpg", crop)[1].tobytes())
+                        # ZIP用に保存
+                        crop_bytes = cv2.imencode(".jpg", crop)[1].tobytes()
+                        zf.writestr(f"assets/P{p_num}_fig{idx}.jpg", crop_bytes)
+                        
+                        # PPT用に配置
+                        s = io.BytesIO(crop_bytes)
                         slide.shapes.add_picture(s, int(ox*scale_x), int(oy*scale_y), width=int(ow*scale_x), height=int(oh*scale_y))
                         object_rects.append((ox, oy, ow, oh))
                 else:
-                    s = io.BytesIO(cv2.imencode(".jpg", cv_img, [int(cv2.IMWRITE_JPEG_QUALITY), 80])[1].tofile(s))
+                    # ★修正済み：安全な画像配置コード
+                    # 通常モードでは背景全体を貼る
+                    ret, buf = cv2.imencode(".jpg", cv_img, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                    s = io.BytesIO(buf.tobytes())
                     slide.shapes.add_picture(s, 0, 0, width=prs.slide_width, height=prs.slide_height)
 
-                # OCR (Tesseract)
-                # Tesseractはpackages.txtが必要ですが、PyMuPDFへの移行で少なくとも画像化までは成功します
-                # 万が一OCRが動かなくてもアプリは落ちないようにtry-catch
+                # 3. OCR (文字認識)
                 try:
-                    ocr_img, _, _ = preprocess_image_for_ocr(cv_img, 1.0) # PyMuPDFですでに高画質なのでzoom=1
+                    ocr_img, _, _ = preprocess_image_for_ocr(cv_img, 1.0)
                     d = pytesseract.image_to_data(ocr_img, lang=ocr_lang, output_type=Output.DICT)
-                except:
+                except Exception as e:
+                    # OCRが失敗してもアプリを止めない
+                    # print(f"OCR Error: {e}") 
                     d = {'text': [], 'conf': []}
 
                 raw_blocks = {}
@@ -287,13 +315,16 @@ if uploaded_file is not None:
                             raw_blocks[bid]['width'].append(d['width'][j])
                             raw_blocks[bid]['height'].append(d['height'][j])
                 
+                # ブロックのソートと結合
                 sorted_list = sort_blocks_smart(raw_blocks) if smart_sort else sorted(raw_blocks.values(), key=lambda x: min(x['top']))
                 final_blocks = merge_text_blocks_ordered(sorted_list) if merge_lines else {i:v for i,v in enumerate(sorted_list)}
 
+                # 4. テキスト配置 & 翻訳
                 notes_content = []
                 for bid, bdata in final_blocks.items():
                     original_text = "".join(bdata['text'])
                     display_text = original_text
+                    
                     if do_translate:
                         translated = translate_text(original_text, target_lang_code)
                         display_text = translated
@@ -304,9 +335,10 @@ if uploaded_file is not None:
                     ox = min(bdata['left'])
                     oy = min(bdata['top'])
                     ow = max([l+w for l,w in zip(bdata['left'], bdata['width'])]) - ox
-                    # PyMuPDFの画像はOCR用とサイズ一致していると仮定(zoom調整済み)
+                    # PyMuPDF画像はサイズ調整済みなのでそのまま使用
                     orig_x, orig_y, orig_w = ox, oy, ow 
 
+                    # 分解モード時の重なり回避
                     if mode.startswith("分解"):
                         cx, cy = orig_x + orig_w/2, orig_y + int(max(bdata['height'])/2)
                         if any(rox < cx < rox+row and roy < cy < roy+roh for (rox,roy,row,roh) in object_rects): continue
@@ -315,6 +347,7 @@ if uploaded_file is not None:
                     pp_y = int(orig_y * scale_y)
                     pp_w = int(orig_w * scale_x)
 
+                    # 小さすぎるゴミテキストボックスを排除
                     if pp_w > Inches(0.2):
                         try:
                             is_title = detect_title and (orig_y < h_orig * 0.2)
@@ -331,12 +364,14 @@ if uploaded_file is not None:
                             p.text = display_text
                             p.font.size = Pt(font_pt)
                             p.font.name = target_font
+                            # 日本語フォントID強制
                             p.font.language_id = 1041
                             
                             if is_title:
                                 p.font.bold = True
                                 p.font.color.rgb = RGBColor(0, 51, 102)
                             else:
+                                # 色推定 (エラーが出ても黒になるようtry-catch外には出さない)
                                 y1,y2 = max(0,orig_y), min(h_orig,orig_y+int(max(bdata['height'])))
                                 x1,x2 = max(0,orig_x), min(w_orig,orig_x+orig_w)
                                 roi = cv_img[y1:y2, x1:x2]
@@ -347,20 +382,26 @@ if uploaded_file is not None:
                                     if len(t_pix)>0:
                                         r,g,b = np.mean(t_pix, axis=0)
                                         p.font.color.rgb = RGBColor(int(r), int(g), int(b))
-                        except: pass
+                        except:
+                            pass
                 
+                # スピーカーノート書き込み
                 slide.notes_slide.notes_text_frame.text = "\n".join(notes_content)
                 p_bar.progress((i+1)/process_cnt)
 
+        # 完了処理
         status_area.success("✅ 変換完了！")
         st.balloons()
         
         col_d1, col_d2 = st.columns(2)
+        
+        # PPTX保存
         out_ppt = io.BytesIO()
         prs.save(out_ppt)
         out_ppt.seek(0)
         col_d1.download_button(f"📥 スライド ({target_lang})", out_ppt, "Converted_Slides.pptx", type="primary", use_container_width=True)
 
+        # 画像素材ZIP保存
         if mode.startswith("分解"):
             zip_buffer.seek(0)
             col_d2.download_button(f"🗂️ 画像素材", zip_buffer, "assets.zip", use_container_width=True)
