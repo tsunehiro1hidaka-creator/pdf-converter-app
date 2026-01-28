@@ -1,1 +1,1 @@
-NoteBookLMで生成したPDFをPPT化して右下のロゴを消し去ります
+NoteBookLMで生成したPDFをPPT化して右下のロゴを消し去ります。テキストもOCRして、画像の上に配置します。
