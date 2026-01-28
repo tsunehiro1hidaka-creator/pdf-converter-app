@@ -1,4 +1,5 @@
 poppler-utils
 tesseract-ocr
 tesseract-ocr-jpn
+tesseract-ocr-eng
 libgl1
