@@ -1,25 +1,31 @@
 import streamlit as st
 import os
-import cv2
-import numpy as np
-import pytesseract
-from pytesseract import Output
-from pdf2image import convert_from_bytes, pdfinfo_from_bytes
-from pptx import Presentation
-from pptx.util import Inches, Pt
-from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
-import io
-import zipfile
-from streamlit_image_comparison import image_comparison
-# ★新機能：翻訳ライブラリ
-from deep_translator import GoogleTranslator
+import sys
 
-# ===========================
-# ページ設定
-# ===========================
-st.set_page_config(page_title="Singularity PDF Converter", layout="wide", initial_sidebar_state="expanded")
+# === 1. ページ設定を一番最初に書く（これより前にstコマンドはNG） ===
+st.set_page_config(page_title="Singularity PDF Converter", layout="wide")
 
+# === 2. ライブラリ読み込みチェック（エラーなら親切に表示） ===
+try:
+    import cv2
+    import numpy as np
+    import pytesseract
+    from pytesseract import Output
+    from pdf2image import convert_from_bytes, pdfinfo_from_bytes
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    from pptx.dml.color import RGBColor
+    from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+    import io
+    import zipfile
+    from streamlit_image_comparison import image_comparison
+    from deep_translator import GoogleTranslator
+except ImportError as e:
+    st.error(f"⚠️ ライブラリが見つかりません: {e}")
+    st.info("requirements.txt に 'streamlit-image-comparison' や 'deep-translator' が含まれているか確認してください。")
+    st.stop()
+
+# UIスタイル定義
 st.markdown("""
 <style>
     .stButton>button { border-radius: 8px; font-weight: bold; border: 2px solid #9C27B0; color: #9C27B0; }
@@ -28,13 +34,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🌌 Singularity PDF Converter (特異点版)")
-st.markdown("""
-**次元を超えた機能:**
-1. **AI自動翻訳**: レイアウトを崩さず、英語のPDFを日本語スライドに変換します。
-2. **構造理解**: タイトルと本文を識別し、デザインを自動調整します。
-3. **バイリンガルノート**: 原文と翻訳をスピーカーノートに自動記録します。
-""")
+st.title("🌌 Singularity PDF Converter (修正版)")
 
 # ===========================
 # 関数定義
@@ -42,22 +42,28 @@ st.markdown("""
 
 @st.cache_data(show_spinner=False)
 def load_pdf_images(file_bytes):
-    return convert_from_bytes(file_bytes, dpi=300)
+    # Popplerエラー対策
+    try:
+        return convert_from_bytes(file_bytes, dpi=300)
+    except Exception as e:
+        st.error(f"PDFの読み込みに失敗しました。Popplerがインストールされているか確認してください。\nエラー詳細: {e}")
+        return []
 
 @st.cache_data(show_spinner=False)
 def get_pdf_info(file_bytes):
-    return pdfinfo_from_bytes(file_bytes)
+    try:
+        return pdfinfo_from_bytes(file_bytes)
+    except:
+        return {"Pages": 0}
 
-# ★翻訳関数（キャッシュ付きで高速化）
 @st.cache_data(show_spinner=False)
 def translate_text(text, target_lang='ja'):
     try:
         if not text.strip(): return text
-        # 5000文字制限などの回避のため、簡易的に実装
         translator = GoogleTranslator(source='auto', target=target_lang)
         return translator.translate(text)
-    except:
-        return text
+    except Exception:
+        return text # 翻訳失敗時は原文を返す
 
 def preprocess_image_for_ocr(cv_img, zoom_factor=2.0):
     h, w = cv_img.shape[:2]
@@ -138,18 +144,17 @@ def merge_text_blocks_ordered(sorted_blocks, spacing_limit=50):
 # ===========================
 st.sidebar.header("🎛️ シンギュラリティ制御")
 
-with st.sidebar.expander("🌐 言語・翻訳 (New!)", expanded=True):
-    do_translate = st.checkbox("自動翻訳を実行する", value=False, help="テキストを翻訳してスライドに配置します")
+with st.sidebar.expander("🌐 言語・翻訳", expanded=True):
+    do_translate = st.checkbox("自動翻訳を実行する", value=False)
     target_lang = st.selectbox("翻訳先の言語", ["ja (日本語)", "en (英語)", "zh-CN (中国語)", "ko (韓国語)"], index=0)
     target_lang_code = target_lang.split()[0]
     
-    ocr_lang_map = {"ja": "eng+jpn", "en": "jpn+eng", "zh-CN": "chi_sim", "ko": "kor"}
-    # 翻訳先が日本語なら、元のPDFは英語かもしれないのでOCRは英語メインにする等のロジック
-    ocr_lang = "jpn+eng" # デフォルトは日栄混合
+    # OCR言語の安全なデフォルト
+    ocr_lang = "jpn+eng"
 
 with st.sidebar.expander("🛠️ デザイン構造", expanded=True):
     target_font = st.selectbox("フォント", ["Meiryo", "Yu Gothic", "BIZ UDPGothic", "Arial"])
-    detect_title = st.checkbox("タイトル自動強調", value=True, help="ページ上部の大きな文字をタイトルとして強調します")
+    detect_title = st.checkbox("タイトル自動強調", value=True)
     mode = st.radio("モード", ["分解モード", "通常モード"])
 
 with st.sidebar.expander("⚙️ 詳細パラメータ"):
@@ -170,8 +175,14 @@ if uploaded_file is not None:
     pdf_info = get_pdf_info(file_bytes)
     total_pages = pdf_info["Pages"]
     
+    if total_pages == 0:
+        st.error("PDFの読み込みに失敗しました。ファイルが壊れているか、Popplerが動いていません。")
+        st.stop()
+
     with st.spinner("量子解析中..."):
         images = load_pdf_images(file_bytes)
+        if not images:
+            st.stop()
 
     # --- プレビュー ---
     st.divider()
@@ -191,7 +202,6 @@ if uploaded_file is not None:
         for (ox, oy, ow, oh) in objs:
             cv2.rectangle(img_proc, (ox, oy), (ox+ow, oy+oh), (255, 120, 0), 4)
             
-    # タイトル判定エリアの可視化（上部20%）
     if detect_title:
         cv2.line(img_proc, (0, int(h*0.2)), (w, int(h*0.2)), (0, 255, 0), 2)
 
@@ -199,7 +209,7 @@ if uploaded_file is not None:
         img1=img_orig,
         img2=cv2.cvtColor(img_proc, cv2.COLOR_BGR2RGB),
         label1="Original",
-        label2="Processed (緑線より上はタイトル判定エリア)",
+        label2="Processed",
         width=700,
         in_memory=True
     )
@@ -259,19 +269,25 @@ if uploaded_file is not None:
 
                 # 2. OCR & 翻訳
                 ocr_img, _, _ = preprocess_image_for_ocr(cv_img, 2.0)
-                d = pytesseract.image_to_data(ocr_img, lang=ocr_lang, output_type=Output.DICT)
-                
+                try:
+                    d = pytesseract.image_to_data(ocr_img, lang=ocr_lang, output_type=Output.DICT)
+                except Exception as e:
+                    st.error(f"OCRエンジンエラー: {e}")
+                    st.warning("Tesseractの言語データ（jpn/eng）が不足している可能性があります。")
+                    d = {'text': [], 'conf': []}
+
                 raw_blocks = {}
-                for j in range(len(d['text'])):
-                    txt = d['text'][j].strip()
-                    if int(d['conf'][j]) > 40 and txt != "" and not (len(txt)==1 and txt in ".,-_|"):
-                        bid = d['block_num'][j]
-                        if bid not in raw_blocks: raw_blocks[bid] = {'text':[], 'left':[], 'top':[], 'width':[], 'height':[]}
-                        raw_blocks[bid]['text'].append(txt)
-                        raw_blocks[bid]['left'].append(d['left'][j])
-                        raw_blocks[bid]['top'].append(d['top'][j])
-                        raw_blocks[bid]['width'].append(d['width'][j])
-                        raw_blocks[bid]['height'].append(d['height'][j])
+                if 'text' in d:
+                    for j in range(len(d['text'])):
+                        txt = d['text'][j].strip()
+                        if int(d['conf'][j]) > 40 and txt != "" and not (len(txt)==1 and txt in ".,-_|"):
+                            bid = d['block_num'][j]
+                            if bid not in raw_blocks: raw_blocks[bid] = {'text':[], 'left':[], 'top':[], 'width':[], 'height':[]}
+                            raw_blocks[bid]['text'].append(txt)
+                            raw_blocks[bid]['left'].append(d['left'][j])
+                            raw_blocks[bid]['top'].append(d['top'][j])
+                            raw_blocks[bid]['width'].append(d['width'][j])
+                            raw_blocks[bid]['height'].append(d['height'][j])
                 
                 sorted_list = sort_blocks_smart(raw_blocks) if smart_sort else sorted(raw_blocks.values(), key=lambda x: min(x['top']))
                 final_blocks = merge_text_blocks_ordered(sorted_list) if merge_lines else {i:v for i,v in enumerate(sorted_list)}
@@ -282,7 +298,6 @@ if uploaded_file is not None:
                 for bid, bdata in final_blocks.items():
                     original_text = "".join(bdata['text'])
                     
-                    # 翻訳実行
                     display_text = original_text
                     if do_translate:
                         translated = translate_text(original_text, target_lang_code)
@@ -291,17 +306,16 @@ if uploaded_file is not None:
                     else:
                         notes_content.append(original_text + "\n")
 
-                    # 座標計算
                     ox = min(bdata['left'])
                     oy = min(bdata['top'])
                     ow = max([l+w for l,w in zip(bdata['left'], bdata['width'])]) - ox
-                    oh = max([t+h for t,h in zip(bdata['top'], bdata['height'])]) - oy
                     
-                    # OCR拡大を戻す
-                    orig_x, orig_y, orig_w, orig_h = int(ox/2), int(oy/2), int(ow/2), int(oh/2)
-
+                    orig_x, orig_y, orig_w = int(ox/2), int(oy/2), int(ow/2)
+                    
+                    # 分解モードで重なりチェック
                     if mode.startswith("分解"):
-                        cx, cy = orig_x + orig_w/2, orig_y + orig_h/2
+                         # 簡易判定：中心点が図形内にあるか
+                        cx, cy = orig_x + orig_w/2, orig_y + int(max(bdata['height'])/2) # 高さは推定
                         if any(rox < cx < rox+row and roy < cy < roy+roh for (rox,roy,row,roh) in object_rects): continue
 
                     pp_x = int(orig_x * scale_x)
@@ -310,15 +324,11 @@ if uploaded_file is not None:
 
                     if pp_w > Inches(0.2):
                         try:
-                            # タイトル判定 (ページ上部20%以内 かつ フォントサイズが大きい)
                             is_title = detect_title and (orig_y < h_orig * 0.2)
-                            
                             avg_h = (sum(bdata['height'])/len(bdata['height']))/2.0
                             est_pt = (prs.slide_height.inches*72)*(avg_h/h_orig)*0.75
                             font_pt = max(9, min(est_pt, 80))
-                            
-                            if is_title:
-                                font_pt *= 1.2 # タイトルなら少し大きく
+                            if is_title: font_pt *= 1.2
                             
                             box_h = Inches(font_pt/72 * 1.5 * (display_text.count('\n') + 1))
                             txBox = slide.shapes.add_textbox(pp_x, pp_y, pp_w, box_h)
@@ -332,10 +342,9 @@ if uploaded_file is not None:
                             
                             if is_title:
                                 p.font.bold = True
-                                p.font.color.rgb = RGBColor(0, 51, 102) # タイトルっぽい濃紺
+                                p.font.color.rgb = RGBColor(0, 51, 102)
                             else:
-                                # 色検出
-                                y1,y2 = max(0,orig_y), min(h_orig,orig_y+orig_h)
+                                y1,y2 = max(0,orig_y), min(h_orig,orig_y+int(max(bdata['height'])))
                                 x1,x2 = max(0,orig_x), min(w_orig,orig_x+orig_w)
                                 roi = cv_img[y1:y2, x1:x2]
                                 if roi.size > 0:
@@ -347,7 +356,6 @@ if uploaded_file is not None:
                                         p.font.color.rgb = RGBColor(int(r), int(g), int(b))
                         except: pass
                 
-                # スピーカーノートに原文＆訳文を追加
                 slide.notes_slide.notes_text_frame.text = "\n".join(notes_content)
                 p_bar.progress((i+1)/process_cnt)
 
